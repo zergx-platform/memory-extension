@@ -45,10 +45,7 @@ func testPool(t *testing.T) *pgxpool.Pool {
 
 func newServer(t *testing.T, pool *pgxpool.Pool) *server {
 	t.Helper()
-	return &server{
-		pool:  pool,
-		embed: newEmbedClient(envOr("EMBED_URL", "http://rucoder-ollama.temp.svc.cluster.local:11434")),
-	}
+	return &server{pool: pool}
 }
 
 func do(t *testing.T, h http.Handler, method, path string, body string) (int, map[string]interface{}) {
@@ -192,13 +189,19 @@ func TestHistorySearchKeyword(t *testing.T) {
 	m1 := "m-" + fmt.Sprint(time.Now().UnixNano()) + "-1"
 	m2 := "m-" + fmt.Sprint(time.Now().UnixNano()) + "-2"
 	m3 := "m-" + fmt.Sprint(time.Now().UnixNano()) + "-3"
-	_, _ = s.pool.Exec(ctx, `INSERT INTO messages (id, role, content, prev_id, created_at) VALUES
-		($1,'user','hello world','','2026-01-01 00:00:01'),
-		($2,'assistant','I wrote a parser','','2026-01-01 00:00:02'),
-		($3,'assistant','finalized the code','','2026-01-01 00:00:03')`, m1, m2, m3)
+	_, _ = s.pool.Exec(ctx, `INSERT INTO messages (id, role, prev_id, created_at) VALUES
+		($1,'user','','2026-01-01 00:00:01'),
+		($2,'assistant','','2026-01-01 00:00:02'),
+		($3,'assistant','','2026-01-01 00:00:03')`, m1, m2, m3)
 	_, _ = s.pool.Exec(ctx, `UPDATE messages SET prev_id = $1 WHERE id = $2`, m2, m3)
 	_, _ = s.pool.Exec(ctx, `UPDATE messages SET prev_id = $1 WHERE id = $2`, m1, m2)
 	_, _ = s.pool.Exec(ctx, `UPDATE sessions SET tip_id = $1 WHERE name = $2`, m3, sid)
+	// Text lives in parts(type=text).
+	_, _ = s.pool.Exec(ctx, `INSERT INTO parts (id, message_id, type, seq, data) VALUES
+		($1,$2,'text',0,'{"text":"hello world"}'),
+		($3,$4,'text',0,'{"text":"I wrote a parser"}'),
+		($5,$6,'text',0,'{"text":"finalized the code"}')`,
+		"p1-"+m1, m1, "p2-"+m2, m2, "p3-"+m3, m3)
 
 	// keyword hit on the middle message
 	entries, err := s.searchHistory(ctx, searchParams{session: sid, query: "parser", limit: 10})
@@ -231,11 +234,15 @@ func TestHistoryRangeDepth(t *testing.T) {
 
 	m1 := "r-" + fmt.Sprint(time.Now().UnixNano()) + "-1"
 	m2 := "r-" + fmt.Sprint(time.Now().UnixNano()) + "-2"
-	_, _ = s.pool.Exec(ctx, `INSERT INTO messages (id, role, content, prev_id, created_at) VALUES
-		($1,'user','first','','2026-01-01 00:00:01'),
-		($2,'user','second','','2026-01-01 00:00:02')`, m1, m2)
+	_, _ = s.pool.Exec(ctx, `INSERT INTO messages (id, role, prev_id, created_at) VALUES
+		($1,'user','','2026-01-01 00:00:01'),
+		($2,'user','','2026-01-01 00:00:02')`, m1, m2)
 	_, _ = s.pool.Exec(ctx, `UPDATE messages SET prev_id = $1 WHERE id = $2`, m1, m2)
 	_, _ = s.pool.Exec(ctx, `UPDATE sessions SET tip_id = $1 WHERE name = $2`, m2, sid)
+	_, _ = s.pool.Exec(ctx, `INSERT INTO parts (id, message_id, type, seq, data) VALUES
+		($1,$2,'text',0,'{"text":"first"}'),
+		($3,$4,'text',0,'{"text":"second"}')`,
+		"pr1-"+m1, m1, "pr2-"+m2, m2)
 
 	// depth window [0,1): the newest message only
 	entries, err := s.chainEntries(ctx, sid, 0, 1, 100)
@@ -253,51 +260,4 @@ func TestHistoryRangeDepth(t *testing.T) {
 	if len(entries) != 1 || entries[0].Content != "first" || entries[0].Depth != 1 {
 		t.Fatalf("older range = %+v", entries)
 	}
-}
-
-func TestSemanticSearch(t *testing.T) {
-	if os.Getenv("MEMORY_TEST_PG") != "1" {
-		t.Skip("requires PG")
-	}
-	// 需要 embed 服务在线。若不可达则跳过。
-	s := newServer(t, testPool(t))
-	if err := s.pool.Ping(context.Background()); err != nil {
-		t.Skipf("pg: %v", err)
-	}
-	// 探测 embed 服务
-	ctx := context.Background()
-	if _, err := s.embed.embed(ctx, "ping"); err != nil {
-		t.Skipf("embed service unavailable: %v", err)
-	}
-
-	sid := "memtest-" + fmt.Sprint(time.Now().UnixNano())
-	var tip string
-	s.pool.QueryRow(ctx, `INSERT INTO sessions (name, model, preset, created_at, updated_at)
-		VALUES ($1,'','','2026-01-01 00:00:00','2026-01-01 00:00:00')
-		RETURNING tip_id`, sid).Scan(&tip)
-
-	m1 := "s-" + fmt.Sprint(time.Now().UnixNano()) + "-1"
-	m2 := "s-" + fmt.Sprint(time.Now().UnixNano()) + "-2"
-	_, _ = s.pool.Exec(ctx, `INSERT INTO messages (id, role, content, prev_id, created_at) VALUES
-		($1,'user','how to fix a segfault in C code','','2026-01-01 00:00:01'),
-		($2,'user','best pasta recipes for dinner','','2026-01-01 00:00:02')`, m1, m2)
-	_, _ = s.pool.Exec(ctx, `UPDATE messages SET prev_id = $1 WHERE id = $2`, m1, m2)
-	_, _ = s.pool.Exec(ctx, `UPDATE sessions SET tip_id = $1 WHERE name = $2`, m2, sid)
-
-	hits, err := s.searchSimilar(ctx, sid, "debugging a memory crash", 3, 50)
-	if err != nil {
-		t.Fatalf("semantic search = %v", err)
-	}
-	if len(hits) == 0 {
-		t.Fatal("no semantic hits")
-	}
-	// 语义最相近的应是 segfault 消息
-	if !strings.Contains(hits[0].Content, "segfault") {
-		t.Fatalf("top hit should be the segfault message, got %q", hits[0].Content)
-	}
-	if hits[0].Score <= 0 || hits[0].Score > 1 {
-		t.Fatalf("score out of range: %v", hits[0].Score)
-	}
-	// 清理向量
-	_, _ = s.pool.Exec(ctx, `DELETE FROM message_embeddings WHERE message_id IN ($1,$2)`, m1, m2)
 }

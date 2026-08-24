@@ -20,21 +20,22 @@ type historyEntry struct {
 	Depth int `json:"depth"`
 }
 
-// chain SQL walks a session's message chain from its tip via prev_id, with
+// chainSQL walks a session's message chain from its tip via prev_id, with
 // depth as the message-level sequence. Session tip resolves via
 // sessions.tip_id; empty tip falls back to the newest message of that role
 // chain is session-scoped only through the tip, so a session with no tip has
-// no retrievable history.
+// no retrievable history. messages carries no content column — text lives in
+// parts(type=text).
 const chainSQL = `
 WITH RECURSIVE chain AS (
-  SELECT m.id, m.role, m.content, m.prev_id, m.created_at, 0 AS depth
+  SELECT m.id, m.role, m.prev_id, m.created_at, 0 AS depth
   FROM messages m
   WHERE m.id = $1
   UNION ALL
-  SELECT m.id, m.role, m.content, m.prev_id, m.created_at, c.depth + 1
+  SELECT m.id, m.role, m.prev_id, m.created_at, c.depth + 1
   FROM messages m JOIN chain c ON m.id = c.prev_id
 )
-SELECT id, role, content, created_at, depth
+SELECT id, role, created_at, depth
 FROM chain
 WHERE depth < $2
 ORDER BY depth ASC`
@@ -74,7 +75,7 @@ func (s *server) chainEntries(ctx context.Context, sid string, depthFrom, depthT
 	var all []chainRaw
 	for rows.Next() {
 		var r chainRaw
-		if err := rows.Scan(&r.id, &r.role, &r.content, &r.created, &r.depth); err != nil {
+		if err := rows.Scan(&r.id, &r.role, &r.created, &r.depth); err != nil {
 			return nil, err
 		}
 		all = append(all, r)
@@ -102,18 +103,16 @@ func (s *server) chainEntries(ctx context.Context, sid string, depthFrom, depthT
 		return []historyEntry{}, nil
 	}
 
-	// Merge tool parts (tool name + change_id) keyed by message id.
-	toolByMsg := map[string][]partInfo{}
-	if ids := msgIDs(all); len(ids) > 0 {
-		toolByMsg = s.partsForMessages(ctx, ids)
-	}
+	// Text (from parts) + tool metadata (tool name + change_id) per message.
+	textByMsg := s.textPartsForMessages(ctx, msgIDs(all), "")
+	toolByMsg := s.partsForMessages(ctx, msgIDs(all))
 
 	out := make([]historyEntry, 0, to-from)
 	for _, r := range all[from:to] {
 		e := historyEntry{
 			Session:   sid,
 			Role:      r.role,
-			Content:   r.content,
+			Content:   textByMsg[r.id],
 			CreatedAt: r.created,
 			Depth:     r.depth, // SQL depth: tip = 0 (newest)
 		}
@@ -138,8 +137,8 @@ type partInfo struct {
 }
 
 type chainRaw struct {
-	id, role, content, created string
-	depth                      int
+	id, role, created string
+	depth             int
 }
 
 func msgIDs(rows []chainRaw) []string {
@@ -148,6 +147,39 @@ func msgIDs(rows []chainRaw) []string {
 		ids = append(ids, r.id)
 	}
 	return ids
+}
+
+// textPartsForMessages returns message id → concatenated text of its
+// parts(type=text), in seq order. When query is non-empty, only text parts
+// matching the case-insensitive %LIKE% pattern are included (DB-side search).
+func (s *server) textPartsForMessages(ctx context.Context, ids []string, query string) map[string]string {
+	out := map[string]string{}
+	if len(ids) == 0 {
+		return out
+	}
+	rows, err := s.pool.Query(ctx, `
+		SELECT message_id, data FROM parts
+		WHERE message_id = ANY($1) AND type = 'text'
+		  AND ($2 = '' OR lower(data) LIKE '%' || lower($2) || '%')
+		ORDER BY message_id, seq`, ids, query)
+	if err != nil {
+		return out
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var mid, data string
+		if err := rows.Scan(&mid, &data); err != nil {
+			continue
+		}
+		var v struct {
+			Text string `json:"text"`
+		}
+		if json.Unmarshal([]byte(data), &v) != nil {
+			continue
+		}
+		out[mid] += v.Text
+	}
+	return out
 }
 
 // partsForMessages extracts tool name + change_id for a set of message ids
@@ -199,6 +231,10 @@ type searchParams struct {
 	limit   int
 }
 
+// searchHistory performs a %LIKE% search over the chain's parts(type=text)
+// text, optionally constrained to a time window [from, to]. Matching happens
+// DB-side in textPartsForMessages; non-matching messages are dropped. Tool
+// names and change ids are also searched (client-side) as before.
 func (s *server) searchHistory(ctx context.Context, p searchParams) ([]historyEntry, error) {
 	if p.session == "" {
 		return nil, fmt.Errorf("session is required")
@@ -224,13 +260,14 @@ func (s *server) searchHistory(ctx context.Context, p searchParams) ([]historyEn
 	var all []chainRaw
 	for rows.Next() {
 		var r chainRaw
-		if err := rows.Scan(&r.id, &r.role, &r.content, &r.created, &r.depth); err != nil {
+		if err := rows.Scan(&r.id, &r.role, &r.created, &r.depth); err != nil {
 			return nil, err
 		}
 		all = append(all, r)
 	}
 	_ = rows.Err()
 
+	textByMsg := s.textPartsForMessages(ctx, msgIDs(all), p.query)
 	toolByMsg := s.partsForMessages(ctx, msgIDs(all))
 
 	out := []historyEntry{}
@@ -244,7 +281,7 @@ func (s *server) searchHistory(ctx context.Context, p searchParams) ([]historyEn
 		e := historyEntry{
 			Session:   p.session,
 			Role:      r.role,
-			Content:   r.content,
+			Content:   textByMsg[r.id],
 			CreatedAt: r.created,
 			Depth:     r.depth,
 		}
