@@ -1,0 +1,175 @@
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+// testPool connects to the temp-namespace Postgres (gate by MEMORY_TEST_PG).
+// The agent DB is shared with the live agent, so tests use an isolated table
+// suffix pattern via a dedicated schema-less approach: they TRUNCATE todos
+// before/after and only touch rows for a synthetic session id.
+func testPool(t *testing.T) *pgxpool.Pool {
+	t.Helper()
+	if os.Getenv("MEMORY_TEST_PG") != "1" {
+		t.Skip("set MEMORY_TEST_PG=1 to run PG-backed tests")
+	}
+	cfg := PgConfig{
+		Host:     envOr("MEMORY_TEST_PG_HOST", "rucoder-postgres.temp.svc.cluster.local"),
+		Port:     normalizePort(envOr("MEMORY_TEST_PG_PORT", "5432")),
+		User:     envOr("MEMORY_TEST_PG_USER", "root"),
+		Password: envOr("MEMORY_TEST_PG_PASSWORD", "devpassword"),
+		DB:       envOr("MEMORY_TEST_PG_DB", "rucoder_agent"),
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	pool, err := OpenPool(ctx, cfg)
+	if err != nil {
+		t.Skipf("pg unavailable: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM todos WHERE session_id LIKE 'memtest-%'`)
+		pool.Close()
+	})
+	return pool
+}
+
+func newServer(t *testing.T, pool *pgxpool.Pool) *server {
+	t.Helper()
+	return &server{pool: pool}
+}
+
+func do(t *testing.T, h http.Handler, method, path string, body string) (int, map[string]interface{}) {
+	t.Helper()
+	var rd *strings.Reader
+	if body != "" {
+		rd = strings.NewReader(body)
+	} else {
+		rd = strings.NewReader("")
+	}
+	req := httptest.NewRequest(method, path, rd)
+	if body != "" {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	var v map[string]interface{}
+	_ = json.NewDecoder(rec.Body).Decode(&v)
+	return rec.Code, v
+}
+
+func TestHealth(t *testing.T) {
+	s := newServer(t, testPool(t))
+	code, v := do(t, s.router(), "GET", "/api/v1/health", "")
+	if code != 200 || v["name"] != "memory-extension" {
+		t.Fatalf("health = %d %v", code, v)
+	}
+}
+
+func TestTodosWriteListRoundtrip(t *testing.T) {
+	s := newServer(t, testPool(t))
+	h := s.router()
+	sid := "memtest-" + fmt.Sprint(time.Now().UnixNano())
+
+	// write
+	code, v := do(t, h, "POST", "/api/v1/todos",
+		`{"session_id":"`+sid+`","todos":[
+			{"content":"first","status":"pending","priority":"high"},
+			{"content":"second","status":"in_progress","priority":"medium"}
+		]}`)
+	if code != 200 || v["count"] != float64(2) {
+		t.Fatalf("write = %d %v", code, v)
+	}
+
+	// list — UI contract shape
+	code, v = do(t, h, "GET", "/api/v1/todos?session_id="+sid, "")
+	if code != 200 {
+		t.Fatalf("list = %d %v", code, v)
+	}
+	todos := v["todos"].([]interface{})
+	if len(todos) != 2 {
+		t.Fatalf("todos len = %d", len(todos))
+	}
+	first := todos[0].(map[string]interface{})
+	for _, k := range []string{"id", "sessionId", "content", "status", "priority", "position", "createdAt"} {
+		if _, ok := first[k]; !ok {
+			t.Fatalf("todo missing UI field %q: %v", k, first)
+		}
+	}
+	if first["sessionId"] != sid || first["content"] != "first" {
+		t.Fatalf("first todo = %v", first)
+	}
+
+	// replace (atomic delete+insert)
+	code, _ = do(t, h, "POST", "/api/v1/todos",
+		`{"session_id":"`+sid+`","todos":[{"content":"only","status":"completed","priority":"low"}]}`)
+	if code != 200 {
+		t.Fatalf("replace = %d", code)
+	}
+	_, v = do(t, h, "GET", "/api/v1/todos?session_id="+sid, "")
+	if len(v["todos"].([]interface{})) != 1 {
+		t.Fatalf("replace should yield 1 todo: %v", v)
+	}
+}
+
+func TestTodosDefaultSession(t *testing.T) {
+	s := newServer(t, testPool(t))
+	h := s.router()
+	code, v := do(t, h, "GET", "/api/v1/todos", "")
+	if code != 200 || v["todos"] == nil {
+		t.Fatalf("default session list = %d %v", code, v)
+	}
+}
+
+func TestTodowriteTool(t *testing.T) {
+	s := newServer(t, testPool(t))
+	sid := "memtest-" + fmt.Sprint(time.Now().UnixNano())
+	tools := s.tools()
+	spec, ok := tools["todowrite"]
+	if !ok {
+		t.Fatal("todowrite tool missing")
+	}
+	content, meta, err := spec.Execute(context.Background(), map[string]interface{}{
+		"_session": sid,
+		"todos": []interface{}{
+			map[string]interface{}{"content": "x", "status": "pending", "priority": "high"},
+		},
+	}, "call-1")
+	if err != nil {
+		t.Fatalf("execute = %v", err)
+	}
+	if !strings.Contains(content, "1") {
+		t.Fatalf("content = %q", content)
+	}
+	if meta["count"] != 1 {
+		t.Fatalf("meta = %v", meta)
+	}
+	// verify persisted
+	todos, _ := s.listTodos(context.Background(), sid)
+	if len(todos) != 1 || todos[0].Content != "x" {
+		t.Fatalf("list after tool = %+v", todos)
+	}
+}
+
+func TestTodowriteLegacySessionID(t *testing.T) {
+	s := newServer(t, testPool(t))
+	sid := "memtest-" + fmt.Sprint(time.Now().UnixNano())
+	spec := s.tools()["todowrite"]
+	// legacy _session_id convention still resolves
+	_, _, err := spec.Execute(context.Background(), map[string]interface{}{
+		"_session_id": sid,
+		"todos":       []interface{}{},
+	}, "call-2")
+	if err != nil {
+		t.Fatalf("legacy execute = %v", err)
+	}
+}
