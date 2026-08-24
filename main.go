@@ -27,7 +27,8 @@ import (
 // version's schema so no data migration is required.
 
 type server struct {
-	pool *pgxpool.Pool
+	pool  *pgxpool.Pool
+	embed *embedClient
 }
 
 // Todo mirrors the UI-facing shape (frontend TodoSchema).
@@ -51,7 +52,10 @@ func main() {
 	}
 	defer pool.Close()
 
-	s := &server{pool: pool}
+	s := &server{
+		pool:  pool,
+		embed: newEmbedClient(envOr("EMBED_URL", "http://rucoder-ollama.temp.svc.cluster.local:11434")),
+	}
 
 	if err := extensionsdk.Serve(
 		extensionsdk.Config{
@@ -283,6 +287,34 @@ func (s *server) tools() map[string]extensionsdk.ToolSpec {
 				return summary, map[string]interface{}{"count": len(entries), "entries": json.RawMessage(b)}, nil
 			},
 		},
+		"history_semantic": {
+			Description: "Semantically search this session's chat history for messages related to a natural-language query. Uses vector similarity (BGE-M3 embeddings) over message content; returns the k most relevant messages with a 0..1 cosine score. Messages are embedded lazily on first search.",
+			InputSchema: extensionsdk.Schema(map[string]interface{}{
+				"query": extensionsdk.StrProp(),
+				"limit": extensionsdk.IntProp(),
+			}, "query"),
+			Execute: func(ctx context.Context, args map[string]interface{}, callID string) (string, map[string]interface{}, error) {
+				sid := extensionsdk.ArgString(args, "_session")
+				if sid == "" {
+					sid = extensionsdk.ArgString(args, "_session_id")
+				}
+				if sid == "" {
+					return "", nil, fmt.Errorf("缺少会话上下文（_session）")
+				}
+				query := extensionsdk.ArgString(args, "query")
+				if query == "" {
+					return "", nil, fmt.Errorf("query 必填")
+				}
+				k := int(extensionsdk.ArgInt(args, "limit", 5))
+				hits, err := s.searchSimilar(ctx, sid, query, k, 200)
+				if err != nil {
+					return "", nil, fmt.Errorf("history_semantic failed: %w", err)
+				}
+				b, _ := json.Marshal(hits)
+				summary := fmt.Sprintf("%d 条语义相关消息。", len(hits))
+				return summary, map[string]interface{}{"count": len(hits), "hits": json.RawMessage(b)}, nil
+			},
+		},
 	}
 }
 
@@ -298,6 +330,7 @@ func (s *server) router() http.Handler {
 		r.Post("/todos", s.writeTodosHTTP)
 		r.Get("/history/search", s.searchHTTP)
 		r.Get("/history/range", s.rangeHTTP)
+		r.Get("/history/semantic", s.semanticHTTP)
 	})
 	return r
 }
@@ -355,6 +388,25 @@ func atoiDefault(s string, def int) int {
 		return def
 	}
 	return n
+}
+
+func (s *server) semanticHTTP(w http.ResponseWriter, r *http.Request) {
+	sid := r.URL.Query().Get("session")
+	if sid == "" {
+		sid = r.URL.Query().Get("session_id")
+	}
+	query := r.URL.Query().Get("query")
+	if sid == "" || query == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"ok": false, "error": "session and query required"})
+		return
+	}
+	k := atoiDefault(r.URL.Query().Get("limit"), 5)
+	hits, err := s.searchSimilar(r.Context(), sid, query, k, 200)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"ok": false, "error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"hits": hits})
 }
 
 func (s *server) listTodosHTTP(w http.ResponseWriter, r *http.Request) {
