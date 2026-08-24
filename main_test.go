@@ -173,3 +173,81 @@ func TestTodowriteLegacySessionID(t *testing.T) {
 		t.Fatalf("legacy execute = %v", err)
 	}
 }
+
+func TestHistorySearchKeyword(t *testing.T) {
+	s := newServer(t, testPool(t))
+	sid := "memtest-" + fmt.Sprint(time.Now().UnixNano())
+
+	// Build a small chain in the agent tables directly (sessions + messages).
+	ctx := context.Background()
+	var tip string
+	s.pool.QueryRow(ctx, `INSERT INTO sessions (name, model, preset, created_at, updated_at)
+		VALUES ($1,'','','2026-01-01 00:00:00','2026-01-01 00:00:00')
+		RETURNING tip_id`, sid).Scan(&tip)
+
+	// Insert 3 messages chained: m1 (oldest) -> m2 -> m3 (tip).
+	m1 := "m-" + fmt.Sprint(time.Now().UnixNano()) + "-1"
+	m2 := "m-" + fmt.Sprint(time.Now().UnixNano()) + "-2"
+	m3 := "m-" + fmt.Sprint(time.Now().UnixNano()) + "-3"
+	_, _ = s.pool.Exec(ctx, `INSERT INTO messages (id, role, content, prev_id, created_at) VALUES
+		($1,'user','hello world','','2026-01-01 00:00:01'),
+		($2,'assistant','I wrote a parser','','2026-01-01 00:00:02'),
+		($3,'assistant','finalized the code','','2026-01-01 00:00:03')`, m1, m2, m3)
+	_, _ = s.pool.Exec(ctx, `UPDATE messages SET prev_id = $1 WHERE id = $2`, m2, m3)
+	_, _ = s.pool.Exec(ctx, `UPDATE messages SET prev_id = $1 WHERE id = $2`, m1, m2)
+	_, _ = s.pool.Exec(ctx, `UPDATE sessions SET tip_id = $1 WHERE name = $2`, m3, sid)
+
+	// keyword hit on the middle message
+	entries, err := s.searchHistory(ctx, searchParams{session: sid, query: "parser", limit: 10})
+	if err != nil {
+		t.Fatalf("search = %v", err)
+	}
+	if len(entries) != 1 || entries[0].Content != "I wrote a parser" {
+		t.Fatalf("search entries = %+v", entries)
+	}
+	// depth: m3 is tip=0, m2=1
+	if entries[0].Depth != 1 {
+		t.Fatalf("depth = %d, want 1", entries[0].Depth)
+	}
+	// time window excludes the hit
+	entries, _ = s.searchHistory(ctx, searchParams{session: sid, query: "parser", from: "2026-01-01 00:00:03", limit: 10})
+	if len(entries) != 0 {
+		t.Fatalf("time window should exclude: %+v", entries)
+	}
+}
+
+func TestHistoryRangeDepth(t *testing.T) {
+	s := newServer(t, testPool(t))
+	sid := "memtest-" + fmt.Sprint(time.Now().UnixNano())
+	ctx := context.Background()
+
+	var tip string
+	s.pool.QueryRow(ctx, `INSERT INTO sessions (name, model, preset, created_at, updated_at)
+		VALUES ($1,'','','2026-01-01 00:00:00','2026-01-01 00:00:00')
+		RETURNING tip_id`, sid).Scan(&tip)
+
+	m1 := "r-" + fmt.Sprint(time.Now().UnixNano()) + "-1"
+	m2 := "r-" + fmt.Sprint(time.Now().UnixNano()) + "-2"
+	_, _ = s.pool.Exec(ctx, `INSERT INTO messages (id, role, content, prev_id, created_at) VALUES
+		($1,'user','first','','2026-01-01 00:00:01'),
+		($2,'user','second','','2026-01-01 00:00:02')`, m1, m2)
+	_, _ = s.pool.Exec(ctx, `UPDATE messages SET prev_id = $1 WHERE id = $2`, m1, m2)
+	_, _ = s.pool.Exec(ctx, `UPDATE sessions SET tip_id = $1 WHERE name = $2`, m2, sid)
+
+	// depth window [0,1): the newest message only
+	entries, err := s.chainEntries(ctx, sid, 0, 1, 100)
+	if err != nil {
+		t.Fatalf("range = %v", err)
+	}
+	if len(entries) != 1 || entries[0].Content != "second" {
+		t.Fatalf("range entries = %+v", entries)
+	}
+	if entries[0].Depth != 0 {
+		t.Fatalf("newest depth = %d, want 0", entries[0].Depth)
+	}
+	// [1,2): the older message
+	entries, _ = s.chainEntries(ctx, sid, 1, 2, 100)
+	if len(entries) != 1 || entries[0].Content != "first" || entries[0].Depth != 1 {
+		t.Fatalf("older range = %+v", entries)
+	}
+}

@@ -224,6 +224,65 @@ func (s *server) tools() map[string]extensionsdk.ToolSpec {
 				return fmt.Sprintf("Updated %d todo(s).", n), map[string]interface{}{"count": n}, nil
 			},
 		},
+		"history_search": {
+			Description: "Search this session's chat history by keyword (case-insensitive substring over message text, tool names and change ids), optionally constrained to a time range [from, to] (YYYY-MM-DD HH:MM:SS). Returns messages newest-first with their role, depth (0 = newest), tool name and workspace change id.",
+			InputSchema: extensionsdk.Schema(map[string]interface{}{
+				"query": extensionsdk.StrProp(),
+				"from":  extensionsdk.StrProp(),
+				"to":    extensionsdk.StrProp(),
+				"limit": extensionsdk.IntProp(),
+			}, "query"),
+			Execute: func(ctx context.Context, args map[string]interface{}, callID string) (string, map[string]interface{}, error) {
+				sid := extensionsdk.ArgString(args, "_session")
+				if sid == "" {
+					sid = extensionsdk.ArgString(args, "_session_id")
+				}
+				if sid == "" {
+					return "", nil, fmt.Errorf("缺少会话上下文（_session）")
+				}
+				p := searchParams{
+					session: sid,
+					query:   extensionsdk.ArgString(args, "query"),
+					from:    extensionsdk.ArgString(args, "from"),
+					to:      extensionsdk.ArgString(args, "to"),
+					limit:   int(extensionsdk.ArgInt(args, "limit", 50)),
+				}
+				entries, err := s.searchHistory(ctx, p)
+				if err != nil {
+					return "", nil, fmt.Errorf("history_search failed: %w", err)
+				}
+				b, _ := json.Marshal(entries)
+				summary := fmt.Sprintf("%d 条匹配的历史消息。", len(entries))
+				return summary, map[string]interface{}{"count": len(entries), "entries": json.RawMessage(b)}, nil
+			},
+		},
+		"history_range": {
+			Description: "Read this session's chat history by position (depth) window. depth 0 = the newest message; positive numbers go back in time; negative numbers count from the newest side (-1 = newest). Returns [depth_from, depth_to) oldest-first with role, content, tool name and change id.",
+			InputSchema: extensionsdk.Schema(map[string]interface{}{
+				"from":  extensionsdk.IntProp(),
+				"to":    extensionsdk.IntProp(),
+				"limit": extensionsdk.IntProp(),
+			}),
+			Execute: func(ctx context.Context, args map[string]interface{}, callID string) (string, map[string]interface{}, error) {
+				sid := extensionsdk.ArgString(args, "_session")
+				if sid == "" {
+					sid = extensionsdk.ArgString(args, "_session_id")
+				}
+				if sid == "" {
+					return "", nil, fmt.Errorf("缺少会话上下文（_session）")
+				}
+				from := int(extensionsdk.ArgInt(args, "from", 0))
+				to := int(extensionsdk.ArgInt(args, "to", 0))
+				limit := int(extensionsdk.ArgInt(args, "limit", 200))
+				entries, err := s.chainEntries(ctx, sid, from, to, limit)
+				if err != nil {
+					return "", nil, fmt.Errorf("history_range failed: %w", err)
+				}
+				b, _ := json.Marshal(entries)
+				summary := fmt.Sprintf("%d 条历史消息（depth 窗口 [%d,%d)）。", len(entries), from, to)
+				return summary, map[string]interface{}{"count": len(entries), "entries": json.RawMessage(b)}, nil
+			},
+		},
 	}
 }
 
@@ -237,8 +296,65 @@ func (s *server) router() http.Handler {
 		})
 		r.Get("/todos", s.listTodosHTTP)
 		r.Post("/todos", s.writeTodosHTTP)
+		r.Get("/history/search", s.searchHTTP)
+		r.Get("/history/range", s.rangeHTTP)
 	})
 	return r
+}
+
+func (s *server) searchHTTP(w http.ResponseWriter, r *http.Request) {
+	sid := r.URL.Query().Get("session")
+	if sid == "" {
+		sid = r.URL.Query().Get("session_id")
+	}
+	if sid == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"ok": false, "error": "session required"})
+		return
+	}
+	limit := atoiDefault(r.URL.Query().Get("limit"), 50)
+	entries, err := s.searchHistory(r.Context(), searchParams{
+		session: sid,
+		query:   r.URL.Query().Get("query"),
+		from:    r.URL.Query().Get("from"),
+		to:      r.URL.Query().Get("to"),
+		limit:   limit,
+	})
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"ok": false, "error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"entries": entries})
+}
+
+func (s *server) rangeHTTP(w http.ResponseWriter, r *http.Request) {
+	sid := r.URL.Query().Get("session")
+	if sid == "" {
+		sid = r.URL.Query().Get("session_id")
+	}
+	if sid == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"ok": false, "error": "session required"})
+		return
+	}
+	from := atoiDefault(r.URL.Query().Get("from"), 0)
+	to := atoiDefault(r.URL.Query().Get("to"), 0)
+	limit := atoiDefault(r.URL.Query().Get("limit"), 200)
+	entries, err := s.chainEntries(r.Context(), sid, from, to, limit)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"ok": false, "error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"entries": entries})
+}
+
+func atoiDefault(s string, def int) int {
+	if s == "" {
+		return def
+	}
+	n, err := strconv.Atoi(s)
+	if err != nil {
+		return def
+	}
+	return n
 }
 
 func (s *server) listTodosHTTP(w http.ResponseWriter, r *http.Request) {
