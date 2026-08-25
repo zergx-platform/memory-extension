@@ -143,7 +143,7 @@ func TestTodowriteTool(t *testing.T) {
 		"todos": []interface{}{
 			map[string]interface{}{"content": "x", "status": "pending", "priority": "high"},
 		},
-	}, "call-1", func(string) {})
+	}, "call-1", sid, func(string) {})
 	if err != nil {
 		t.Fatalf("execute = %v", err)
 	}
@@ -168,7 +168,7 @@ func TestTodowriteLegacySessionID(t *testing.T) {
 	_, _, err := spec.Execute(context.Background(), map[string]interface{}{
 		"_session_id": sid,
 		"todos":       []interface{}{},
-	}, "call-2", func(string) {})
+	}, "call-2", sid, func(string) {})
 	if err != nil {
 		t.Fatalf("legacy execute = %v", err)
 	}
