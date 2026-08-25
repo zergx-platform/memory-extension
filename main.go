@@ -201,7 +201,7 @@ func (s *server) tools() map[string]extensionsdk.ToolSpec {
 					},
 				},
 			}, "todos"),
-			Execute: func(ctx context.Context, args map[string]interface{}, callID string) (string, map[string]interface{}, error) {
+			Execute: func(ctx context.Context, args map[string]interface{}, callID string, _ func(string)) (string, map[string]interface{}, error) {
 				sid := extensionsdk.ArgString(args, "_session")
 				if sid == "" {
 					sid = extensionsdk.ArgString(args, "_session_id")
@@ -232,7 +232,7 @@ func (s *server) tools() map[string]extensionsdk.ToolSpec {
 				"to":    extensionsdk.StrProp(),
 				"limit": extensionsdk.IntProp(),
 			}, "query"),
-			Execute: func(ctx context.Context, args map[string]interface{}, callID string) (string, map[string]interface{}, error) {
+			Execute: func(ctx context.Context, args map[string]interface{}, callID string, _ func(string)) (string, map[string]interface{}, error) {
 				sid := extensionsdk.ArgString(args, "_session")
 				if sid == "" {
 					sid = extensionsdk.ArgString(args, "_session_id")
@@ -263,7 +263,7 @@ func (s *server) tools() map[string]extensionsdk.ToolSpec {
 				"to":    extensionsdk.IntProp(),
 				"limit": extensionsdk.IntProp(),
 			}),
-			Execute: func(ctx context.Context, args map[string]interface{}, callID string) (string, map[string]interface{}, error) {
+			Execute: func(ctx context.Context, args map[string]interface{}, callID string, _ func(string)) (string, map[string]interface{}, error) {
 				sid := extensionsdk.ArgString(args, "_session")
 				if sid == "" {
 					sid = extensionsdk.ArgString(args, "_session_id")
