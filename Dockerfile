@@ -19,10 +19,12 @@ WORKDIR /build
 COPY go.mod go.sum ./
 RUN go mod download
 COPY *.go ./
+COPY manifest.yaml ./
 RUN CGO_ENABLED=0 go build -o /out/memory-extension .
 
 FROM ${REGISTRY}/alpine:3.24
 RUN apk add --no-cache ca-certificates
 COPY --from=build /out/memory-extension /usr/local/bin/memory-extension
+COPY --from=build /build/manifest.yaml /manifest.yaml
 EXPOSE 8080
 ENTRYPOINT ["memory-extension"]
