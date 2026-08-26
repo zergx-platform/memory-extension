@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -18,6 +19,9 @@ import (
 	abep "abep.dev/sdk"
 	natsbus "abep.dev/sdk/nats"
 )
+
+//go:embed manifest.yaml
+var manifestYaml []byte
 
 // memory-extension replaces the Rust memory-tools service: it persists the
 // session todo list in Postgres and exposes it both as a NATS tool
@@ -62,7 +66,7 @@ func main() {
 		log.Error("nats connect failed", "err", err)
 		os.Exit(1)
 	}
-	manifest, err := abep.LoadManifest("manifest.yaml")
+	manifest, err := abep.ParseManifest(manifestYaml)
 	if err != nil {
 		log.Error("load manifest failed", "err", err)
 		os.Exit(1)
