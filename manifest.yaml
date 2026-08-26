@@ -1,6 +1,6 @@
 # memory-extension protocol manifest — single declarative source for the
 # extension's wire protocol (tools). Handlers are bound by name in code.
-id: memory-extension
+id: memory
 version: 0.1.0
 tools:
   - name: todowrite

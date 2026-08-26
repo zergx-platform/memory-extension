@@ -20,7 +20,7 @@ func TestManifestBinding(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse manifest: %v", err)
 	}
-	if m.ID != "memory-extension" {
+	if m.ID != "memory" {
 		t.Fatalf("manifest id = %q", m.ID)
 	}
 	if len(m.Tools) != 3 {
@@ -28,7 +28,7 @@ func TestManifestBinding(t *testing.T) {
 	}
 
 	cfg := m.Config(manifestHandlers(), nil, nil)
-	if cfg.ID != "memory-extension" {
+	if cfg.ID != "memory" {
 		t.Fatalf("cfg id = %q", cfg.ID)
 	}
 
@@ -93,7 +93,7 @@ func TestDiscoverWire(t *testing.T) {
 		t.Fatalf("discover = %d manifests, want 1", len(manifests))
 	}
 	got := manifests[0]
-	if got.ID != "memory-extension" {
+	if got.ID != "memory" {
 		t.Fatalf("discover id = %q", got.ID)
 	}
 	if len(got.Tools) != 3 {
@@ -127,7 +127,7 @@ func TestTodowriteWire(t *testing.T) {
 	defer agent.Close()
 
 	sid := "memtest-" + fmt.Sprint(time.Now().UnixNano())
-	res, err := agent.CallTool(context.Background(), sid, "memory-extension", "todowrite", "w1",
+	res, err := agent.CallTool(context.Background(), sid, "memory", "todowrite", "w1",
 		map[string]interface{}{
 			"todos": []interface{}{
 				map[string]interface{}{"content": "wire todo", "status": "pending", "priority": "high"},
@@ -181,7 +181,7 @@ func TestHistorySearchWire(t *testing.T) {
 	defer ext.Close()
 	defer agent.Close()
 
-	res, err := agent.CallTool(context.Background(), sid, "memory-extension", "history_search", "s1",
+	res, err := agent.CallTool(context.Background(), sid, "memory", "history_search", "s1",
 		map[string]interface{}{"query": "needle", "limit": 10}, func(string) {})
 	if err != nil {
 		t.Fatalf("history_search wire: %v", err)
@@ -226,7 +226,7 @@ func TestHistoryRangeWire(t *testing.T) {
 	defer ext.Close()
 	defer agent.Close()
 
-	res, err := agent.CallTool(context.Background(), sid, "memory-extension", "history_range", "r1",
+	res, err := agent.CallTool(context.Background(), sid, "memory", "history_range", "r1",
 		map[string]interface{}{"from": 0, "to": 1, "limit": 100}, func(string) {})
 	if err != nil {
 		t.Fatalf("history_range wire: %v", err)
@@ -255,7 +255,7 @@ func TestHistorySearchMissingSessionWire(t *testing.T) {
 	defer ext.Close()
 	defer agent.Close()
 
-	res, err := agent.CallTool(context.Background(), "", "memory-extension", "history_search", "e1",
+	res, err := agent.CallTool(context.Background(), "", "memory", "history_search", "e1",
 		map[string]interface{}{"query": "x"}, func(string) {})
 	if err != nil {
 		t.Fatalf("history_search should return a tool-level error, got transport error: %v", err)
