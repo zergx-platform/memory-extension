@@ -132,7 +132,7 @@ func TestTodowriteWire(t *testing.T) {
 			"todos": []interface{}{
 				map[string]interface{}{"content": "wire todo", "status": "pending", "priority": "high"},
 			},
-		}, func(string) {})
+		})
 	if err != nil {
 		t.Fatalf("todowrite wire: %v", err)
 	}
@@ -182,7 +182,7 @@ func TestHistorySearchWire(t *testing.T) {
 	defer agent.Close()
 
 	res, err := agent.CallTool(context.Background(), sid, "memory", "history_search", "s1",
-		map[string]interface{}{"query": "needle", "limit": 10}, func(string) {})
+		map[string]interface{}{"query": "needle", "limit": 10})
 	if err != nil {
 		t.Fatalf("history_search wire: %v", err)
 	}
@@ -227,7 +227,7 @@ func TestHistoryRangeWire(t *testing.T) {
 	defer agent.Close()
 
 	res, err := agent.CallTool(context.Background(), sid, "memory", "history_range", "r1",
-		map[string]interface{}{"from": 0, "to": 1, "limit": 100}, func(string) {})
+		map[string]interface{}{"from": 0, "to": 1, "limit": 100})
 	if err != nil {
 		t.Fatalf("history_range wire: %v", err)
 	}
@@ -256,7 +256,7 @@ func TestHistorySearchMissingSessionWire(t *testing.T) {
 	defer agent.Close()
 
 	res, err := agent.CallTool(context.Background(), "", "memory", "history_search", "e1",
-		map[string]interface{}{"query": "x"}, func(string) {})
+		map[string]interface{}{"query": "x"})
 	if err != nil {
 		t.Fatalf("history_search should return a tool-level error, got transport error: %v", err)
 	}

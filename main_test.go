@@ -142,7 +142,7 @@ func TestTodowriteTool(t *testing.T) {
 		"todos": []interface{}{
 			map[string]interface{}{"content": "x", "status": "pending", "priority": "high"},
 		},
-	}, "call-1", sid, func(string) {})
+	}, "call-1", sid)
 	if err != nil {
 		t.Fatalf("execute = %v", err)
 	}

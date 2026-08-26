@@ -204,7 +204,7 @@ func (s *server) listTodos(ctx context.Context, sid string) ([]Todo, error) {
 func (s *server) handlers() map[string]abep.ToolSpec {
 	return map[string]abep.ToolSpec{
 		"todowrite": {
-			Execute: func(ctx context.Context, args map[string]interface{}, callID string, sessionName string, _ func(string)) (string, map[string]interface{}, error) {
+			Execute: func(ctx context.Context, args map[string]interface{}, callID string, sessionName string) (string, map[string]interface{}, error) {
 				sid := sessionName
 				if sid == "" {
 					sid = "default"
@@ -225,7 +225,7 @@ func (s *server) handlers() map[string]abep.ToolSpec {
 			},
 		},
 		"history_search": {
-			Execute: func(ctx context.Context, args map[string]interface{}, callID string, sessionName string, _ func(string)) (string, map[string]interface{}, error) {
+			Execute: func(ctx context.Context, args map[string]interface{}, callID string, sessionName string) (string, map[string]interface{}, error) {
 				if sessionName == "" {
 					return "", nil, fmt.Errorf("missing session context (session_name)")
 				}
@@ -246,7 +246,7 @@ func (s *server) handlers() map[string]abep.ToolSpec {
 			},
 		},
 		"history_range": {
-			Execute: func(ctx context.Context, args map[string]interface{}, callID string, sessionName string, _ func(string)) (string, map[string]interface{}, error) {
+			Execute: func(ctx context.Context, args map[string]interface{}, callID string, sessionName string) (string, map[string]interface{}, error) {
 				if sessionName == "" {
 					return "", nil, fmt.Errorf("missing session context (session_name)")
 				}
