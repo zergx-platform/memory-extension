@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -43,12 +44,14 @@ type Todo struct {
 }
 
 func main() {
+	log := slog.Default().With("svc", "memory-extension")
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	pool, err := OpenPool(ctx, pgConfig())
 	if err != nil {
-		panic(err)
+		log.Error("pg connect failed", "err", err)
+		os.Exit(1)
 	}
 	defer pool.Close()
 
@@ -56,7 +59,8 @@ func main() {
 
 	nbus, err := natsbus.Connect(envOr("NATS_URL", "nats://nats.develop.svc.cluster.local:4222"))
 	if err != nil {
-		panic(err)
+		log.Error("nats connect failed", "err", err)
+		os.Exit(1)
 	}
 	if err := abep.Serve(
 		nbus,
@@ -67,7 +71,8 @@ func main() {
 		},
 		abep.ServeOptions{Handler: s.router()},
 	); err != nil {
-		panic(err)
+		log.Error("serve failed", "err", err)
+		os.Exit(1)
 	}
 }
 
