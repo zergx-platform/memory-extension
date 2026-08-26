@@ -14,8 +14,8 @@ require (
 )
 
 require (
-	abep.dev/sdk v0.2.6
-	abep.dev/sdk/nats v0.2.0
+	abep.dev/sdk v0.2.7
+	abep.dev/sdk/nats v0.2.1
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
