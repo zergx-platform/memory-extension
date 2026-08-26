@@ -204,8 +204,11 @@ func (s *server) listTodos(ctx context.Context, sid string) ([]Todo, error) {
 func (s *server) handlers() map[string]abep.ToolSpec {
 	return map[string]abep.ToolSpec{
 		"todowrite": {
-			Execute: func(ctx context.Context, args map[string]interface{}, callID string, _ string, _ func(string)) (string, map[string]interface{}, error) {
-				sid := abep.ArgString(args, "_session")
+			Execute: func(ctx context.Context, args map[string]interface{}, callID string, sessionName string, _ func(string)) (string, map[string]interface{}, error) {
+				sid := sessionName
+				if sid == "" {
+					sid = abep.ArgString(args, "_session")
+				}
 				if sid == "" {
 					sid = abep.ArgString(args, "_session_id")
 				}
@@ -228,8 +231,11 @@ func (s *server) handlers() map[string]abep.ToolSpec {
 			},
 		},
 		"history_search": {
-			Execute: func(ctx context.Context, args map[string]interface{}, callID string, _ string, _ func(string)) (string, map[string]interface{}, error) {
-				sid := abep.ArgString(args, "_session")
+			Execute: func(ctx context.Context, args map[string]interface{}, callID string, sessionName string, _ func(string)) (string, map[string]interface{}, error) {
+				sid := sessionName
+				if sid == "" {
+					sid = abep.ArgString(args, "_session")
+				}
 				if sid == "" {
 					sid = abep.ArgString(args, "_session_id")
 				}
@@ -253,8 +259,11 @@ func (s *server) handlers() map[string]abep.ToolSpec {
 			},
 		},
 		"history_range": {
-			Execute: func(ctx context.Context, args map[string]interface{}, callID string, _ string, _ func(string)) (string, map[string]interface{}, error) {
-				sid := abep.ArgString(args, "_session")
+			Execute: func(ctx context.Context, args map[string]interface{}, callID string, sessionName string, _ func(string)) (string, map[string]interface{}, error) {
+				sid := sessionName
+				if sid == "" {
+					sid = abep.ArgString(args, "_session")
+				}
 				if sid == "" {
 					sid = abep.ArgString(args, "_session_id")
 				}
