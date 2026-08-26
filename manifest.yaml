@@ -1,0 +1,38 @@
+# memory-extension protocol manifest — single declarative source for the
+# extension's wire protocol (tools). Handlers are bound by name in code.
+id: memory-extension
+version: 0.1.0
+tools:
+  - name: todowrite
+    description: Replace the session's todo list (stored in the database, not a file).
+    input_schema:
+      type: object
+      properties:
+        todos:
+          type: array
+          items:
+            type: object
+            properties:
+              content: { type: string }
+              status: { type: string, enum: [pending, in_progress, completed, cancelled] }
+              priority: { type: string, enum: [high, medium, low] }
+            required: [content, status, priority]
+      required: [todos]
+  - name: history_search
+    description: Search this session's chat history by keyword (case-insensitive substring over parts(type=text) text, tool names and change ids), optionally constrained to a time range [from, to] (YYYY-MM-DD HH:MM:SS). Returns messages newest-first with their role, depth (0 = newest), tool name and workspace change id.
+    input_schema:
+      type: object
+      properties:
+        query: { type: string }
+        from: { type: string }
+        to: { type: string }
+        limit: { type: integer }
+      required: [query]
+  - name: history_range
+    description: Read this session's chat history by position (depth) window. depth 0 = the newest message; positive numbers go back in time; negative numbers count from the newest side (-1 = newest). Returns [depth_from, depth_to) oldest-first with role, content, tool name and change id.
+    input_schema:
+      type: object
+      properties:
+        from: { type: integer }
+        to: { type: integer }
+        limit: { type: integer }

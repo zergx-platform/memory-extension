@@ -62,13 +62,14 @@ func main() {
 		log.Error("nats connect failed", "err", err)
 		os.Exit(1)
 	}
+	manifest, err := abep.LoadManifest("manifest.yaml")
+	if err != nil {
+		log.Error("load manifest failed", "err", err)
+		os.Exit(1)
+	}
 	if err := abep.Serve(
 		nbus,
-		abep.Config{
-			ID:      "memory-extension",
-			Version: "0.1.0",
-			Tools:   s.tools(),
-		},
+		manifest.Config(s.handlers(), nil, nil),
 		abep.ServeOptions{Handler: s.router()},
 	); err != nil {
 		log.Error("serve failed", "err", err)
@@ -193,24 +194,12 @@ func (s *server) listTodos(ctx context.Context, sid string) ([]Todo, error) {
 
 // ---- tools (NATS) ----
 
-func (s *server) tools() map[string]abep.ToolSpec {
+// handlers returns the memory tool handlers. Descriptions/schemas live in
+// manifest.yaml (the single declarative protocol source); each handler is
+// bound by tool name.
+func (s *server) handlers() map[string]abep.ToolSpec {
 	return map[string]abep.ToolSpec{
 		"todowrite": {
-			Description: "Replace the session's todo list (stored in the database, not a file).",
-			InputSchema: abep.Schema(map[string]interface{}{
-				"todos": map[string]interface{}{
-					"type": "array",
-					"items": map[string]interface{}{
-						"type": "object",
-						"properties": map[string]interface{}{
-							"content":  map[string]interface{}{"type": "string"},
-							"status":   map[string]interface{}{"type": "string", "enum": []string{"pending", "in_progress", "completed", "cancelled"}},
-							"priority": map[string]interface{}{"type": "string", "enum": []string{"high", "medium", "low"}},
-						},
-						"required": []string{"content", "status", "priority"},
-					},
-				},
-			}, "todos"),
 			Execute: func(ctx context.Context, args map[string]interface{}, callID string, _ string, _ func(string)) (string, map[string]interface{}, error) {
 				sid := abep.ArgString(args, "_session")
 				if sid == "" {
@@ -235,13 +224,6 @@ func (s *server) tools() map[string]abep.ToolSpec {
 			},
 		},
 		"history_search": {
-			Description: "Search this session's chat history by keyword (case-insensitive substring over parts(type=text) text, tool names and change ids), optionally constrained to a time range [from, to] (YYYY-MM-DD HH:MM:SS). Returns messages newest-first with their role, depth (0 = newest), tool name and workspace change id.",
-			InputSchema: abep.Schema(map[string]interface{}{
-				"query": abep.StrProp(),
-				"from":  abep.StrProp(),
-				"to":    abep.StrProp(),
-				"limit": abep.IntProp(),
-			}, "query"),
 			Execute: func(ctx context.Context, args map[string]interface{}, callID string, _ string, _ func(string)) (string, map[string]interface{}, error) {
 				sid := abep.ArgString(args, "_session")
 				if sid == "" {
@@ -267,12 +249,6 @@ func (s *server) tools() map[string]abep.ToolSpec {
 			},
 		},
 		"history_range": {
-			Description: "Read this session's chat history by position (depth) window. depth 0 = the newest message; positive numbers go back in time; negative numbers count from the newest side (-1 = newest). Returns [depth_from, depth_to) oldest-first with role, content, tool name and change id.",
-			InputSchema: abep.Schema(map[string]interface{}{
-				"from":  abep.IntProp(),
-				"to":    abep.IntProp(),
-				"limit": abep.IntProp(),
-			}),
 			Execute: func(ctx context.Context, args map[string]interface{}, callID string, _ string, _ func(string)) (string, map[string]interface{}, error) {
 				sid := abep.ArgString(args, "_session")
 				if sid == "" {

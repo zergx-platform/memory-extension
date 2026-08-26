@@ -133,7 +133,7 @@ func TestTodosDefaultSession(t *testing.T) {
 func TestTodowriteTool(t *testing.T) {
 	s := newServer(t, testPool(t))
 	sid := "memtest-" + fmt.Sprint(time.Now().UnixNano())
-	tools := s.tools()
+	tools := s.handlers()
 	spec, ok := tools["todowrite"]
 	if !ok {
 		t.Fatal("todowrite tool missing")
@@ -163,7 +163,7 @@ func TestTodowriteTool(t *testing.T) {
 func TestTodowriteLegacySessionID(t *testing.T) {
 	s := newServer(t, testPool(t))
 	sid := "memtest-" + fmt.Sprint(time.Now().UnixNano())
-	spec := s.tools()["todowrite"]
+	spec := s.handlers()["todowrite"]
 	// legacy _session_id convention still resolves
 	_, _, err := spec.Execute(context.Background(), map[string]interface{}{
 		"_session_id": sid,
