@@ -207,12 +207,6 @@ func (s *server) handlers() map[string]abep.ToolSpec {
 			Execute: func(ctx context.Context, args map[string]interface{}, callID string, sessionName string, _ func(string)) (string, map[string]interface{}, error) {
 				sid := sessionName
 				if sid == "" {
-					sid = abep.ArgString(args, "_session")
-				}
-				if sid == "" {
-					sid = abep.ArgString(args, "_session_id")
-				}
-				if sid == "" {
 					sid = "default"
 				}
 				var todos []map[string]interface{}
@@ -232,18 +226,11 @@ func (s *server) handlers() map[string]abep.ToolSpec {
 		},
 		"history_search": {
 			Execute: func(ctx context.Context, args map[string]interface{}, callID string, sessionName string, _ func(string)) (string, map[string]interface{}, error) {
-				sid := sessionName
-				if sid == "" {
-					sid = abep.ArgString(args, "_session")
-				}
-				if sid == "" {
-					sid = abep.ArgString(args, "_session_id")
-				}
-				if sid == "" {
-					return "", nil, fmt.Errorf("缺少会话上下文（_session）")
+				if sessionName == "" {
+					return "", nil, fmt.Errorf("missing session context (session_name)")
 				}
 				p := searchParams{
-					session: sid,
+					session: sessionName,
 					query:   abep.ArgString(args, "query"),
 					from:    abep.ArgString(args, "from"),
 					to:      abep.ArgString(args, "to"),
@@ -254,31 +241,24 @@ func (s *server) handlers() map[string]abep.ToolSpec {
 					return "", nil, fmt.Errorf("history_search failed: %w", err)
 				}
 				b, _ := json.Marshal(entries)
-				summary := fmt.Sprintf("%d 条匹配的历史消息。", len(entries))
+				summary := fmt.Sprintf("%d matching history message(s).", len(entries))
 				return summary, map[string]interface{}{"count": len(entries), "entries": json.RawMessage(b)}, nil
 			},
 		},
 		"history_range": {
 			Execute: func(ctx context.Context, args map[string]interface{}, callID string, sessionName string, _ func(string)) (string, map[string]interface{}, error) {
-				sid := sessionName
-				if sid == "" {
-					sid = abep.ArgString(args, "_session")
-				}
-				if sid == "" {
-					sid = abep.ArgString(args, "_session_id")
-				}
-				if sid == "" {
-					return "", nil, fmt.Errorf("缺少会话上下文（_session）")
+				if sessionName == "" {
+					return "", nil, fmt.Errorf("missing session context (session_name)")
 				}
 				from := int(abep.ArgInt(args, "from", 0))
 				to := int(abep.ArgInt(args, "to", 0))
 				limit := int(abep.ArgInt(args, "limit", 200))
-				entries, err := s.chainEntries(ctx, sid, from, to, limit)
+				entries, err := s.chainEntries(ctx, sessionName, from, to, limit)
 				if err != nil {
 					return "", nil, fmt.Errorf("history_range failed: %w", err)
 				}
 				b, _ := json.Marshal(entries)
-				summary := fmt.Sprintf("%d 条历史消息（depth 窗口 [%d,%d)）。", len(entries), from, to)
+				summary := fmt.Sprintf("%d history message(s) (depth window [%d,%d)).", len(entries), from, to)
 				return summary, map[string]interface{}{"count": len(entries), "entries": json.RawMessage(b)}, nil
 			},
 		},

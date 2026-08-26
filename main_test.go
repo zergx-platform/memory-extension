@@ -139,7 +139,6 @@ func TestTodowriteTool(t *testing.T) {
 		t.Fatal("todowrite tool missing")
 	}
 	content, meta, err := spec.Execute(context.Background(), map[string]interface{}{
-		"_session": sid,
 		"todos": []interface{}{
 			map[string]interface{}{"content": "x", "status": "pending", "priority": "high"},
 		},
@@ -157,20 +156,6 @@ func TestTodowriteTool(t *testing.T) {
 	todos, _ := s.listTodos(context.Background(), sid)
 	if len(todos) != 1 || todos[0].Content != "x" {
 		t.Fatalf("list after tool = %+v", todos)
-	}
-}
-
-func TestTodowriteLegacySessionID(t *testing.T) {
-	s := newServer(t, testPool(t))
-	sid := "memtest-" + fmt.Sprint(time.Now().UnixNano())
-	spec := s.handlers()["todowrite"]
-	// legacy _session_id convention still resolves
-	_, _, err := spec.Execute(context.Background(), map[string]interface{}{
-		"_session_id": sid,
-		"todos":       []interface{}{},
-	}, "call-2", sid, func(string) {})
-	if err != nil {
-		t.Fatalf("legacy execute = %v", err)
 	}
 }
 

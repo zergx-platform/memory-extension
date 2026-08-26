@@ -260,7 +260,7 @@ func TestHistorySearchMissingSessionWire(t *testing.T) {
 	if err != nil {
 		t.Fatalf("history_search should return a tool-level error, got transport error: %v", err)
 	}
-	if !strings.Contains(res.Content, "failed") && !strings.Contains(res.Content, "会话") {
+	if !strings.Contains(res.Content, "failed") && !strings.Contains(res.Content, "missing") {
 		t.Fatalf("history_search missing session content = %q", res.Content)
 	}
 }
