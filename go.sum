@@ -1,7 +1,7 @@
-abep.dev/sdk v0.2.8 h1:AcaX+3k6W0+AyK2WsNnDFUMAy3katTNdD1HegQW2rS4=
-abep.dev/sdk v0.2.8/go.mod h1:fYs/rrDmtBDyNPaCm4P5H8jJNKOqkiKLVNF8Rd2I4G4=
-abep.dev/sdk/nats v0.2.2 h1:DlNJO9482RjQ5Mgw7VfYi9YKV1mfRUfRIcdZBGPhBFQ=
-abep.dev/sdk/nats v0.2.2/go.mod h1:N5jaRNgIUuIT2XEVRGXXhJmqL3FEn6yXEmxHeSHWXmg=
+abep.dev/sdk v0.2.9 h1:/BD8dTRKkPLLq8aAHLeuw79BT5Cvb5t+UKgeN7WlNZQ=
+abep.dev/sdk v0.2.9/go.mod h1:fYs/rrDmtBDyNPaCm4P5H8jJNKOqkiKLVNF8Rd2I4G4=
+abep.dev/sdk/nats v0.2.3 h1:6mdZvIY87nGgzvQWOyFqkXvA+XX1tz71qdK0HMvKzHw=
+abep.dev/sdk/nats v0.2.3/go.mod h1:lp8ckL5L3Bg9miNVMlA7Hmx8tTjSNt//nb5/B+n3+H4=
 forgejo.develop.10.199.64.20.nip.io/rucoder/go-shared v0.1.0 h1:/PUNWKMjfffLh2hklyDmEBRwYHwSaKWpFqikq3WeOL8=
 forgejo.develop.10.199.64.20.nip.io/rucoder/go-shared v0.1.0/go.mod h1:Q4OYQQ4mUFFmhj6h8y8kZedv6TDRmqG62QaQOvW6n1Y=
 github.com/creack/pty v1.1.9/go.mod h1:oKZEueFk5CKHvIhNR5MUki03XCEU+Q6VDXinZuGJ33E=
