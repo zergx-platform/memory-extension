@@ -36,6 +36,7 @@ var manifestYaml []byte
 
 type server struct {
 	pool *pgxpool.Pool
+	ext  *abep.Extension
 }
 
 // Todo mirrors the UI-facing shape (frontend TodoSchema).
@@ -76,7 +77,12 @@ func main() {
 	if err := abep.Serve(
 		nbus,
 		manifest.Config(s.handlers(), nil, nil),
-		abep.ServeOptions{Handler: s.router()},
+		abep.ServeOptions{
+			Handler: s.router(),
+			Run: func(_ context.Context, ext *abep.Extension) {
+				s.ext = ext
+			},
+		},
 	); err != nil {
 		log.Error("serve failed", "err", err)
 		os.Exit(1)
@@ -213,6 +219,13 @@ func (s *server) handlers() map[string]abep.ToolSpec {
 				n, err := s.writeTodos(ctx, sid, todos)
 				if err != nil {
 					return "", nil, fmt.Errorf("todowrite failed: %w", err)
+				}
+				// Notify live UI listeners over the session SSE stream so the
+				// chat page drops its 5s todos polling.
+				if s.ext != nil {
+					if perr := s.ext.PublishSessionEvent(context.Background(), sid, "todos-updated", map[string]interface{}{"count": n}); perr != nil {
+						slog.Warn("todos-updated publish failed", "err", perr)
+					}
 				}
 				return fmt.Sprintf("Updated %d todo(s).", n), map[string]interface{}{"count": n}, nil
 			},
