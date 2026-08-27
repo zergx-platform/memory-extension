@@ -8,6 +8,7 @@ require (
 )
 
 require (
+	forgejo.develop.10.199.64.20.nip.io/rucoder/go-shared v0.1.0 // indirect
 	github.com/kr/text v0.2.0 // indirect
 	github.com/rogpeppe/go-internal v1.16.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
