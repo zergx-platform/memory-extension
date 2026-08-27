@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"forgejo.develop.10.199.64.20.nip.io/rucoder/go-shared/env"
+	"forgejo.develop.10.199.64.20.nip.io/zergx/go-shared/env"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -25,11 +25,11 @@ func testPool(t *testing.T) *pgxpool.Pool {
 		t.Skip("set MEMORY_TEST_PG=1 to run PG-backed tests")
 	}
 	cfg := PgConfig{
-		Host:     env.Or("MEMORY_TEST_PG_HOST", "rucoder-postgres.temp.svc.cluster.local"),
+		Host:     env.Or("MEMORY_TEST_PG_HOST", "postgres.zergx.svc.cluster.local"),
 		Port:     env.NormalizePort(env.Or("MEMORY_TEST_PG_PORT", "5432")),
 		User:     env.Or("MEMORY_TEST_PG_USER", "root"),
 		Password: env.Or("MEMORY_TEST_PG_PASSWORD", "devpassword"),
-		DB:       env.Or("MEMORY_TEST_PG_DB", "rucoder_agent"),
+		DB:       env.Or("MEMORY_TEST_PG_DB", "zergx_agent"),
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()

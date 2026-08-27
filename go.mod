@@ -1,9 +1,9 @@
-module forgejo.develop.10.199.64.20.nip.io/rucoder/memory-extension
+module forgejo.develop.10.199.64.20.nip.io/zergx/memory-extension
 
 go 1.26
 
 require (
-	forgejo.develop.10.199.64.20.nip.io/rucoder/go-shared v0.1.0
+	forgejo.develop.10.199.64.20.nip.io/zergx/go-shared v0.1.0
 	github.com/go-chi/chi/v5 v5.3.2
 	github.com/jackc/pgx/v5 v5.10.0
 )

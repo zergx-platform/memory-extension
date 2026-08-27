@@ -18,8 +18,8 @@ import (
 
 	abep "abep.dev/sdk"
 	natsbus "abep.dev/sdk/nats"
-	"forgejo.develop.10.199.64.20.nip.io/rucoder/go-shared/env"
-	"forgejo.develop.10.199.64.20.nip.io/rucoder/go-shared/jsonwrite"
+	"forgejo.develop.10.199.64.20.nip.io/zergx/go-shared/env"
+	"forgejo.develop.10.199.64.20.nip.io/zergx/go-shared/jsonwrite"
 )
 
 //go:embed manifest.yaml
@@ -101,7 +101,7 @@ func pgConfig() PgConfig {
 		Port:     env.NormalizePort(env.Or("POSTGRES_PORT", "5432")),
 		User:     env.Or("POSTGRES_USER", "root"),
 		Password: env.Or("POSTGRES_PASSWORD", "devpassword"),
-		DB:       env.Or("POSTGRES_DB_AGENT", "rucoder_agent"),
+		DB:       env.Or("POSTGRES_DB_AGENT", "zergx_agent"),
 	}
 }
 
