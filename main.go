@@ -64,7 +64,7 @@ func main() {
 
 	s := &server{pool: pool}
 
-	nbus, err := natsbus.Connect(env.Or("NATS_URL", "nats://nats.develop.svc.cluster.local:4222"))
+	nbus, err := natsbus.Connect(env.Or("NATS_URL", "nats://nats.zergx.svc.cluster.local:4222"))
 	if err != nil {
 		log.Error("nats connect failed", "err", err)
 		os.Exit(1)
@@ -97,7 +97,7 @@ type PgConfig struct {
 
 func pgConfig() PgConfig {
 	return PgConfig{
-		Host:     env.Or("POSTGRES_HOST", "postgres.develop.svc.cluster.local"),
+		Host:     env.Or("POSTGRES_HOST", "postgres.zergx.svc.cluster.local"),
 		Port:     env.NormalizePort(env.Or("POSTGRES_PORT", "5432")),
 		User:     env.Or("POSTGRES_USER", "root"),
 		Password: env.Or("POSTGRES_PASSWORD", "devpassword"),
