@@ -2,6 +2,8 @@ forgejo.develop.10.199.64.20.nip.io/abc-protocol/sdk-go v0.1.0 h1:9vddEtN8SZmBZl
 forgejo.develop.10.199.64.20.nip.io/abc-protocol/sdk-go v0.1.0/go.mod h1:O3QPxUQfGXOJzO5pjLTu10Qj7A+U/rfrnP0nkGTqy0I=
 forgejo.develop.10.199.64.20.nip.io/abc-protocol/sdk-go v0.2.0 h1:PDPYmi47UrnBQ3LVdPWLxmKp1/eGFuQ6N+U0wmSR7js=
 forgejo.develop.10.199.64.20.nip.io/abc-protocol/sdk-go v0.2.0/go.mod h1:O3QPxUQfGXOJzO5pjLTu10Qj7A+U/rfrnP0nkGTqy0I=
+forgejo.develop.10.199.64.20.nip.io/abc-protocol/sdk-go v0.2.1 h1:JZG+sINd5PftShrY0B5eyidICo8WJCdhb9n/589X1F4=
+forgejo.develop.10.199.64.20.nip.io/abc-protocol/sdk-go v0.2.1/go.mod h1:O3QPxUQfGXOJzO5pjLTu10Qj7A+U/rfrnP0nkGTqy0I=
 forgejo.develop.10.199.64.20.nip.io/zergx/go-shared v0.1.1 h1:La4XyQP1y1rSR42Bnv0DGX+bEYl4UwSv0nO8DYZAhw0=
 forgejo.develop.10.199.64.20.nip.io/zergx/go-shared v0.1.1/go.mod h1:QFor4G38FDMBx2D7mP4rszqDWgzTLQlL/lE4wDDe2Hg=
 github.com/creack/pty v1.1.9/go.mod h1:oKZEueFk5CKHvIhNR5MUki03XCEU+Q6VDXinZuGJ33E=
