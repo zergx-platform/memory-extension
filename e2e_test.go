@@ -7,7 +7,11 @@ import (
 	"testing"
 	"time"
 
-	abep "abep.dev/sdk"
+	"forgejo.develop.10.199.64.20.nip.io/abc-protocol/sdk-go/agent"
+	"forgejo.develop.10.199.64.20.nip.io/abc-protocol/sdk-go/extension"
+	"forgejo.develop.10.199.64.20.nip.io/abc-protocol/sdk-go/manifest"
+	natsbus "forgejo.develop.10.199.64.20.nip.io/abc-protocol/sdk-go/transport/nats"
+	"forgejo.develop.10.199.64.20.nip.io/abc-protocol/sdk-go/natsrun"
 )
 
 // ---- manifest binding ----
@@ -16,7 +20,7 @@ import (
 // truth: every declared tool has a bound handler, every handler is declared,
 // and descriptions/schemas are carried onto the wire config.
 func TestManifestBinding(t *testing.T) {
-	m, err := abep.ParseManifest(manifestYaml)
+	m, err := manifest.ParseManifest(manifestYaml)
 	if err != nil {
 		t.Fatalf("parse manifest: %v", err)
 	}
@@ -27,7 +31,7 @@ func TestManifestBinding(t *testing.T) {
 		t.Fatalf("manifest tools = %d, want 3", len(m.Tools))
 	}
 
-	cfg := m.Config(manifestHandlers(), nil, nil)
+	cfg := m.BuildConfig(manifest.Bindings{Handlers: manifestHandlers()})
 	if cfg.ID != "memory" {
 		t.Fatalf("cfg id = %q", cfg.ID)
 	}
@@ -57,31 +61,45 @@ func TestManifestBinding(t *testing.T) {
 }
 
 // manifestHandlers returns the handler map without needing a live server.
-func manifestHandlers() map[string]abep.ToolSpec {
+func manifestHandlers() map[string]extension.ToolSpec {
 	return (&server{}).handlers()
 }
 
 // ---- wire-level e2e over the inproc transport ----
 
-// startExt serves the extension on the hub and waits for subscription setup.
-func startExt(t *testing.T, hub *abep.InprocHub, cfg abep.Config) (*abep.Agent, *abep.Extension) {
+// startExt serves the extension against a fresh embedded nats-server and
+// returns an agent connected to the same bus. Each test gets its own broker
+// (memory storage), so cross-test redelivery is impossible.
+func startExt(t *testing.T, cfg extension.Config) (*agent.Agent, *extension.Extension) {
 	t.Helper()
-	ext := abep.NewExtension(abep.NewInprocBus(hub), cfg)
-	agent := abep.NewAgent(abep.NewInprocBus(hub))
+	srv, err := natsrun.Start(natsrun.Config{Storage: natsrun.Memory})
+	if err != nil {
+		t.Fatalf("start nats: %v", err)
+	}
+	t.Cleanup(func() { _ = srv.Stop() })
+	extBus, err := natsbus.Connect(srv.URL())
+	if err != nil {
+		t.Fatalf("ext bus: %v", err)
+	}
+	agentBus, err := natsbus.Connect(srv.URL())
+	if err != nil {
+		t.Fatalf("agent bus: %v", err)
+	}
+	ext := extension.New(extBus, cfg)
+	ag := agent.New(agentBus)
 	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
+	t.Cleanup(func() { cancel(); _ = extBus.Close(); _ = agentBus.Close() })
 	go func() { _ = ext.Serve(ctx) }()
-	time.Sleep(100 * time.Millisecond)
-	return agent, ext
+	time.Sleep(300 * time.Millisecond)
+	return ag, ext
 }
 
 func TestDiscoverWire(t *testing.T) {
-	hub := abep.NewInprocHub()
-	m, err := abep.ParseManifest(manifestYaml)
+	m, err := manifest.ParseManifest(manifestYaml)
 	if err != nil {
 		t.Fatal(err)
 	}
-	agent, ext := startExt(t, hub, m.Config(manifestHandlers(), nil, nil))
+	agent, ext := startExt(t, m.BuildConfig(manifest.Bindings{Handlers: manifestHandlers()}))
 	defer ext.Close()
 	defer agent.Close()
 
@@ -93,14 +111,14 @@ func TestDiscoverWire(t *testing.T) {
 		t.Fatalf("discover = %d manifests, want 1", len(manifests))
 	}
 	got := manifests[0]
-	if got.ID != "memory" {
-		t.Fatalf("discover id = %q", got.ID)
+	if got.Id != "memory" {
+		t.Fatalf("discover id = %q", got.Id)
 	}
-	if len(got.Tools) != 3 {
-		t.Fatalf("discover tools = %d, want 3", len(got.Tools))
+	if len(*got.Tools) != 3 {
+		t.Fatalf("discover tools = %d, want 3", len(*got.Tools))
 	}
 	names := map[string]bool{}
-	for _, tool := range got.Tools {
+	for _, tool := range *got.Tools {
 		names[tool.Name] = true
 		if tool.Description == "" {
 			t.Fatalf("discovered tool %q has empty description", tool.Name)
@@ -117,12 +135,11 @@ func TestDiscoverWire(t *testing.T) {
 // as the first-class field, no _session arg) and verifies persistence.
 func TestTodowriteWire(t *testing.T) {
 	s := newServer(t, testPool(t))
-	hub := abep.NewInprocHub()
-	m, err := abep.ParseManifest(manifestYaml)
+	m, err := manifest.ParseManifest(manifestYaml)
 	if err != nil {
 		t.Fatal(err)
 	}
-	agent, ext := startExt(t, hub, m.Config(s.handlers(), nil, nil))
+	agent, ext := startExt(t, m.BuildConfig(manifest.Bindings{Handlers: s.handlers()}))
 	defer ext.Close()
 	defer agent.Close()
 
@@ -136,8 +153,8 @@ func TestTodowriteWire(t *testing.T) {
 	if err != nil {
 		t.Fatalf("todowrite wire: %v", err)
 	}
-	if !strings.Contains(res.Content, "1") {
-		t.Fatalf("todowrite content = %q", res.Content)
+	if !strings.Contains(*res.Content, "1") {
+		t.Fatalf("todowrite content = %q", *res.Content)
 	}
 
 	todos, err := s.listTodos(context.Background(), sid)
@@ -172,12 +189,11 @@ func TestHistorySearchWire(t *testing.T) {
 		($3,$4,'text',0,'{"text":"other"}')`,
 		"wp1-"+m1, m1, "wp2-"+m2, m2)
 
-	hub := abep.NewInprocHub()
-	m, err := abep.ParseManifest(manifestYaml)
+	m, err := manifest.ParseManifest(manifestYaml)
 	if err != nil {
 		t.Fatal(err)
 	}
-	agent, ext := startExt(t, hub, m.Config(s.handlers(), nil, nil))
+	agent, ext := startExt(t, m.BuildConfig(manifest.Bindings{Handlers: s.handlers()}))
 	defer ext.Close()
 	defer agent.Close()
 
@@ -186,9 +202,9 @@ func TestHistorySearchWire(t *testing.T) {
 	if err != nil {
 		t.Fatalf("history_search wire: %v", err)
 	}
-	meta, ok := res.Metadata.(map[string]interface{})
+	meta, ok := res.Data.(map[string]interface{})
 	if !ok {
-		t.Fatalf("history_search metadata = %T (%v)", res.Metadata, res.Metadata)
+		t.Fatalf("history_search data = %T (%v)", res.Data, res.Data)
 	}
 	if meta["count"] != float64(1) {
 		t.Fatalf("history_search count = %v, want 1", meta["count"])
@@ -217,12 +233,11 @@ func TestHistoryRangeWire(t *testing.T) {
 		($3,$4,'text',0,'{"text":"second"}')`,
 		"rp1-"+m1, m1, "rp2-"+m2, m2)
 
-	hub := abep.NewInprocHub()
-	m, err := abep.ParseManifest(manifestYaml)
+	m, err := manifest.ParseManifest(manifestYaml)
 	if err != nil {
 		t.Fatal(err)
 	}
-	agent, ext := startExt(t, hub, m.Config(s.handlers(), nil, nil))
+	agent, ext := startExt(t, m.BuildConfig(manifest.Bindings{Handlers: s.handlers()}))
 	defer ext.Close()
 	defer agent.Close()
 
@@ -231,9 +246,9 @@ func TestHistoryRangeWire(t *testing.T) {
 	if err != nil {
 		t.Fatalf("history_range wire: %v", err)
 	}
-	meta, ok := res.Metadata.(map[string]interface{})
+	meta, ok := res.Data.(map[string]interface{})
 	if !ok {
-		t.Fatalf("history_range metadata = %T (%v)", res.Metadata, res.Metadata)
+		t.Fatalf("history_range data = %T (%v)", res.Data, res.Data)
 	}
 	if meta["count"] != float64(1) {
 		t.Fatalf("history_range count = %v, want 1", meta["count"])
@@ -246,12 +261,11 @@ func TestHistoryRangeWire(t *testing.T) {
 // produce a tool error, not a silent default.
 func TestHistorySearchMissingSessionWire(t *testing.T) {
 	s := newServer(t, testPool(t))
-	hub := abep.NewInprocHub()
-	m, err := abep.ParseManifest(manifestYaml)
+	m, err := manifest.ParseManifest(manifestYaml)
 	if err != nil {
 		t.Fatal(err)
 	}
-	agent, ext := startExt(t, hub, m.Config(s.handlers(), nil, nil))
+	agent, ext := startExt(t, m.BuildConfig(manifest.Bindings{Handlers: s.handlers()}))
 	defer ext.Close()
 	defer agent.Close()
 
@@ -260,7 +274,10 @@ func TestHistorySearchMissingSessionWire(t *testing.T) {
 	if err != nil {
 		t.Fatalf("history_search should return a tool-level error, got transport error: %v", err)
 	}
-	if !strings.Contains(res.Content, "failed") && !strings.Contains(res.Content, "missing") {
-		t.Fatalf("history_search missing session content = %q", res.Content)
+	if res.Error == nil {
+		t.Fatalf("history_search missing session should set res.Error, got %+v", res)
+	}
+	if !strings.Contains(res.Error.Message, "failed") && !strings.Contains(res.Error.Message, "missing") {
+		t.Fatalf("history_search missing session error = %q", res.Error.Message)
 	}
 }

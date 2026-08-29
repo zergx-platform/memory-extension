@@ -16,8 +16,10 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	abep "abep.dev/sdk"
-	natsbus "abep.dev/sdk/nats"
+	abcprotocol "forgejo.develop.10.199.64.20.nip.io/abc-protocol/sdk-go"
+	"forgejo.develop.10.199.64.20.nip.io/abc-protocol/sdk-go/extension"
+	"forgejo.develop.10.199.64.20.nip.io/abc-protocol/sdk-go/manifest"
+	natsbus "forgejo.develop.10.199.64.20.nip.io/abc-protocol/sdk-go/transport/nats"
 	"forgejo.develop.10.199.64.20.nip.io/zergx/go-shared/env"
 	"forgejo.develop.10.199.64.20.nip.io/zergx/go-shared/jsonwrite"
 )
@@ -36,7 +38,7 @@ var manifestYaml []byte
 
 type server struct {
 	pool *pgxpool.Pool
-	ext  *abep.Extension
+	ext  *extension.Extension
 }
 
 // Todo mirrors the UI-facing shape (frontend TodoSchema).
@@ -69,17 +71,16 @@ func main() {
 		log.Error("nats connect failed", "err", err)
 		os.Exit(1)
 	}
-	manifest, err := abep.ParseManifest(manifestYaml)
+	m, err := manifest.ParseManifest(manifestYaml)
 	if err != nil {
 		log.Error("load manifest failed", "err", err)
 		os.Exit(1)
 	}
-	if err := abep.Serve(
-		nbus,
-		manifest.Config(s.handlers(), nil, nil),
-		abep.ServeOptions{
+	if err := extension.Serve(
+		extension.New(nbus, m.BuildConfig(manifest.Bindings{Handlers: s.handlers()})),
+		extension.ServeOptions{
 			Handler: s.router(),
-			Run: func(_ context.Context, ext *abep.Extension) {
+			Run: func(_ context.Context, ext *extension.Extension) {
 				s.ext = ext
 			},
 		},
@@ -200,12 +201,12 @@ func (s *server) listTodos(ctx context.Context, sid string) ([]Todo, error) {
 // handlers returns the memory tool handlers. Descriptions/schemas live in
 // manifest.yaml (the single declarative protocol source); each handler is
 // bound by tool name.
-func (s *server) handlers() map[string]abep.ToolSpec {
-	return map[string]abep.ToolSpec{
+func (s *server) handlers() map[string]extension.ToolSpec {
+	return map[string]extension.ToolSpec{
 		"todowrite": {
-			Execute: func(ctx context.Context, args map[string]interface{}, callID string, sessionName string) (string, map[string]interface{}, error) {
+			Execute: func(ctx context.Context, args map[string]interface{}, callID string, sessionName string) (extension.ToolResultData, error) {
 				if sessionName == "" {
-					return "", nil, fmt.Errorf("missing session context (session_name)")
+					return extension.ToolResultData{}, fmt.Errorf("missing session context (session_name)")
 				}
 				sid := sessionName
 				var todos []map[string]interface{}
@@ -218,7 +219,7 @@ func (s *server) handlers() map[string]abep.ToolSpec {
 				}
 				n, err := s.writeTodos(ctx, sid, todos)
 				if err != nil {
-					return "", nil, fmt.Errorf("todowrite failed: %w", err)
+					return extension.ToolResultData{}, fmt.Errorf("todowrite failed: %w", err)
 				}
 				// Notify live UI listeners over the session SSE stream so the
 				// chat page drops its 5s todos polling.
@@ -227,45 +228,45 @@ func (s *server) handlers() map[string]abep.ToolSpec {
 						slog.Warn("todos-updated publish failed", "err", perr)
 					}
 				}
-				return fmt.Sprintf("Updated %d todo(s).", n), map[string]interface{}{"count": n}, nil
+				return extension.ToolResultData{Content: fmt.Sprintf("Updated %d todo(s).", n), Data: map[string]interface{}{"count": n}}, nil
 			},
 		},
 		"history_search": {
-			Execute: func(ctx context.Context, args map[string]interface{}, callID string, sessionName string) (string, map[string]interface{}, error) {
+			Execute: func(ctx context.Context, args map[string]interface{}, callID string, sessionName string) (extension.ToolResultData, error) {
 				if sessionName == "" {
-					return "", nil, fmt.Errorf("missing session context (session_name)")
+					return extension.ToolResultData{}, fmt.Errorf("missing session context (session_name)")
 				}
 				p := searchParams{
 					session: sessionName,
-					query:   abep.ArgString(args, "query"),
-					from:    abep.ArgString(args, "from"),
-					to:      abep.ArgString(args, "to"),
-					limit:   int(abep.ArgInt(args, "limit", 50)),
+					query:   abcprotocol.ArgString(args, "query"),
+					from:    abcprotocol.ArgString(args, "from"),
+					to:      abcprotocol.ArgString(args, "to"),
+					limit:   int(abcprotocol.ArgInt(args, "limit", 50)),
 				}
 				entries, err := s.searchHistory(ctx, p)
 				if err != nil {
-					return "", nil, fmt.Errorf("history_search failed: %w", err)
+					return extension.ToolResultData{}, fmt.Errorf("history_search failed: %w", err)
 				}
 				b, _ := json.Marshal(entries)
 				summary := fmt.Sprintf("%d matching history message(s).", len(entries))
-				return summary, map[string]interface{}{"count": len(entries), "entries": json.RawMessage(b)}, nil
+				return extension.ToolResultData{Content: summary, Data: map[string]interface{}{"count": len(entries), "entries": json.RawMessage(b)}}, nil
 			},
 		},
 		"history_range": {
-			Execute: func(ctx context.Context, args map[string]interface{}, callID string, sessionName string) (string, map[string]interface{}, error) {
+			Execute: func(ctx context.Context, args map[string]interface{}, callID string, sessionName string) (extension.ToolResultData, error) {
 				if sessionName == "" {
-					return "", nil, fmt.Errorf("missing session context (session_name)")
+					return extension.ToolResultData{}, fmt.Errorf("missing session context (session_name)")
 				}
-				from := int(abep.ArgInt(args, "from", 0))
-				to := int(abep.ArgInt(args, "to", 0))
-				limit := int(abep.ArgInt(args, "limit", 200))
+				from := int(abcprotocol.ArgInt(args, "from", 0))
+				to := int(abcprotocol.ArgInt(args, "to", 0))
+				limit := int(abcprotocol.ArgInt(args, "limit", 200))
 				entries, err := s.chainEntries(ctx, sessionName, from, to, limit)
 				if err != nil {
-					return "", nil, fmt.Errorf("history_range failed: %w", err)
+					return extension.ToolResultData{}, fmt.Errorf("history_range failed: %w", err)
 				}
 				b, _ := json.Marshal(entries)
 				summary := fmt.Sprintf("%d history message(s) (depth window [%d,%d)).", len(entries), from, to)
-				return summary, map[string]interface{}{"count": len(entries), "entries": json.RawMessage(b)}, nil
+				return extension.ToolResultData{Content: summary, Data: map[string]interface{}{"count": len(entries), "entries": json.RawMessage(b)}}, nil
 			},
 		},
 	}

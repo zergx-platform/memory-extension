@@ -139,7 +139,7 @@ func TestTodowriteTool(t *testing.T) {
 	if !ok {
 		t.Fatal("todowrite tool missing")
 	}
-	content, meta, err := spec.Execute(context.Background(), map[string]interface{}{
+	res, err := spec.Execute(context.Background(), map[string]interface{}{
 		"todos": []interface{}{
 			map[string]interface{}{"content": "x", "status": "pending", "priority": "high"},
 		},
@@ -147,9 +147,10 @@ func TestTodowriteTool(t *testing.T) {
 	if err != nil {
 		t.Fatalf("execute = %v", err)
 	}
-	if !strings.Contains(content, "1") {
-		t.Fatalf("content = %q", content)
+	if !strings.Contains(res.Content, "1") {
+		t.Fatalf("content = %q", res.Content)
 	}
+	meta, _ := res.Data.(map[string]interface{})
 	if meta["count"] != 1 {
 		t.Fatalf("meta = %v", meta)
 	}

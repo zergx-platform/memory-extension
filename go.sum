@@ -1,13 +1,5 @@
-abep.dev/sdk v0.2.12 h1:veeObnchFHMt1FF+lXB+Qmq6gAsLjqW/XRxRTjgWBpA=
-abep.dev/sdk v0.2.12/go.mod h1:fYs/rrDmtBDyNPaCm4P5H8jJNKOqkiKLVNF8Rd2I4G4=
-abep.dev/sdk v0.2.13 h1:optvXuADffOFlLIDOVhkW/UNGTCNDP60LD3P/jXy9RM=
-abep.dev/sdk v0.2.13/go.mod h1:fYs/rrDmtBDyNPaCm4P5H8jJNKOqkiKLVNF8Rd2I4G4=
-abep.dev/sdk/nats v0.2.5 h1:cdzSuSXCmyFLEtbNVmrrIaWiNJZ1zpuc2kENjaaYc4o=
-abep.dev/sdk/nats v0.2.5/go.mod h1:xJpvui0QshlziE/GYgaPc+XoS66m9jnkncKmMnOvtjU=
-abep.dev/sdk/nats v0.2.6 h1:6UJk74hLc6tQIK+9jA9NvusF/Vnm57z6MD552Kg0iZE=
-abep.dev/sdk/nats v0.2.6/go.mod h1:3b8mShr6QjULIz9xGByytjcpND/I+z8hapkzm0+tiMM=
-forgejo.develop.10.199.64.20.nip.io/zergx/go-shared v0.1.0 h1:dcrmT+h9gHuSujy+PDa+mLWM5+Je7ahKGJtuz9UZ8SE=
-forgejo.develop.10.199.64.20.nip.io/zergx/go-shared v0.1.0/go.mod h1:QFor4G38FDMBx2D7mP4rszqDWgzTLQlL/lE4wDDe2Hg=
+forgejo.develop.10.199.64.20.nip.io/abc-protocol/sdk-go v0.1.0 h1:9vddEtN8SZmBZlQXkj1iaOi6VL7oukwqt/PX8mMntf8=
+forgejo.develop.10.199.64.20.nip.io/abc-protocol/sdk-go v0.1.0/go.mod h1:O3QPxUQfGXOJzO5pjLTu10Qj7A+U/rfrnP0nkGTqy0I=
 forgejo.develop.10.199.64.20.nip.io/zergx/go-shared v0.1.1 h1:La4XyQP1y1rSR42Bnv0DGX+bEYl4UwSv0nO8DYZAhw0=
 forgejo.develop.10.199.64.20.nip.io/zergx/go-shared v0.1.1/go.mod h1:QFor4G38FDMBx2D7mP4rszqDWgzTLQlL/lE4wDDe2Hg=
 github.com/creack/pty v1.1.9/go.mod h1:oKZEueFk5CKHvIhNR5MUki03XCEU+Q6VDXinZuGJ33E=
