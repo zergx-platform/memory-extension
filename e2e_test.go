@@ -153,8 +153,8 @@ func TestTodowriteWire(t *testing.T) {
 	if err != nil {
 		t.Fatalf("todowrite wire: %v", err)
 	}
-	if !strings.Contains(*res.Content, "1") {
-		t.Fatalf("todowrite content = %q", *res.Content)
+	if !strings.Contains(res.Content, "1") {
+		t.Fatalf("todowrite content = %q", res.Content)
 	}
 
 	todos, err := s.listTodos(context.Background(), sid)
