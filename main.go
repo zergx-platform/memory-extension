@@ -197,6 +197,49 @@ func (s *server) listTodos(ctx context.Context, sid string) ([]Todo, error) {
 	return out, rows.Err()
 }
 
+// ---- helpers ----
+
+// renderHistoryList turns history entries into a model-visible, readable list
+// so the agent actively sees each matched message (role, tool, change id,
+// time, truncated content) rather than only a count. `Data.entries` keeps the
+// structured form for the UI. Per-entry text is capped (200 runes).
+func renderHistoryList(locale string, entries []historyEntry) string {
+	if len(entries) == 0 {
+		return "history_search: no matching messages."
+	}
+	var sb strings.Builder
+	label := "history"
+	if locale == "zh" {
+		label = "历史"
+	}
+	fmt.Fprintf(&sb, "%s %d 条：\n", label, len(entries))
+	for i, e := range entries {
+		role := e.Role
+		if role == "" {
+			role = "?"
+		}
+		meta := fmt.Sprintf("[%d] %s (depth %d)", i, role, e.Depth)
+		if e.CreatedAt != "" {
+			meta += " " + e.CreatedAt
+		}
+		if e.ToolName != "" {
+			meta += " tool=" + e.ToolName
+		}
+		if e.ChangeID != "" {
+			meta += " change=" + e.ChangeID
+		}
+		body := e.Content
+		if runes := []rune(body); len(runes) > 200 {
+			body = string(runes[:200]) + "…"
+		}
+		fmt.Fprintf(&sb, "%s\n", meta)
+		if body != "" {
+			fmt.Fprintf(&sb, "    %s\n", body)
+		}
+	}
+	return sb.String()
+}
+
 // ---- tools (NATS) ----
 
 // handlers returns the memory tool handlers. Descriptions/schemas live in
@@ -229,7 +272,9 @@ func (s *server) handlers() map[string]extension.ToolSpec {
 						slog.Warn("todos-updated publish failed", "err", perr)
 					}
 				}
-				return extension.ToolResultData{Content: fmt.Sprintf("Updated %d todo(s).", n), Data: map[string]interface{}{"count": n}}, nil
+				loc := localeOf(ctx, s.ext, sessionName, envOr("ZERGX_LOCALE", "en"))
+				content := t(loc, fmt.Sprintf("Updated %d todo(s).", n), fmt.Sprintf("已更新 %d 条待办。", n))
+				return extension.ToolResultData{Content: content, Data: map[string]interface{}{"count": n}}, nil
 			},
 		},
 		"history_search": {
@@ -249,8 +294,9 @@ func (s *server) handlers() map[string]extension.ToolSpec {
 					return extension.ToolResultData{}, fmt.Errorf("history_search failed: %w", err)
 				}
 				b, _ := json.Marshal(entries)
-				summary := fmt.Sprintf("%d matching history message(s).", len(entries))
-				return extension.ToolResultData{Content: summary, Data: map[string]interface{}{"count": len(entries), "entries": json.RawMessage(b)}}, nil
+				loc := localeOf(ctx, s.ext, sessionName, envOr("ZERGX_LOCALE", "en"))
+				content := renderHistoryList(loc, entries)
+				return extension.ToolResultData{Content: content, Data: map[string]interface{}{"count": len(entries), "entries": json.RawMessage(b)}}, nil
 			},
 		},
 		"history_range": {
@@ -266,8 +312,9 @@ func (s *server) handlers() map[string]extension.ToolSpec {
 					return extension.ToolResultData{}, fmt.Errorf("history_range failed: %w", err)
 				}
 				b, _ := json.Marshal(entries)
-				summary := fmt.Sprintf("%d history message(s) (depth window [%d,%d)).", len(entries), from, to)
-				return extension.ToolResultData{Content: summary, Data: map[string]interface{}{"count": len(entries), "entries": json.RawMessage(b)}}, nil
+				loc := localeOf(ctx, s.ext, sessionName, envOr("ZERGX_LOCALE", "en"))
+				content := renderHistoryList(loc, entries)
+				return extension.ToolResultData{Content: content, Data: map[string]interface{}{"count": len(entries), "entries": json.RawMessage(b)}}, nil
 			},
 		},
 		"file_info": {
@@ -281,10 +328,15 @@ func (s *server) handlers() map[string]extension.ToolSpec {
 					return extension.ToolResultData{}, fmt.Errorf("file not found: %s", code)
 				}
 				b, _ := json.Marshal(meta)
-				return extension.ToolResultData{
-					Content: fmt.Sprintf("File %s: %s (%s, %d bytes, sha256=%s, uploaded %s)",
+				loc := localeOf(ctx, s.ext, sessionName, envOr("ZERGX_LOCALE", "en"))
+				content := t(loc,
+					fmt.Sprintf("File %s: %s (%s, %d bytes, sha256=%s, uploaded %s)",
 						meta.Code, meta.Name, meta.Mime, meta.Size, meta.Sha256, meta.CreatedAt),
-					Data: map[string]interface{}{"meta": json.RawMessage(b)},
+					fmt.Sprintf("文件 %s：%s（%s，%d 字节，sha256=%s，上传于 %s）",
+						meta.Code, meta.Name, meta.Mime, meta.Size, meta.Sha256, meta.CreatedAt))
+				return extension.ToolResultData{
+					Content: content,
+					Data:    map[string]interface{}{"meta": json.RawMessage(b)},
 				}, nil
 			},
 		},
@@ -315,7 +367,10 @@ func (s *server) handlers() map[string]extension.ToolSpec {
 				if err != nil {
 					return extension.ToolResultData{}, fmt.Errorf("image_read failed: %w", err)
 				}
-				return extension.ToolResultData{Content: text, Data: map[string]interface{}{"model": envOr("IMAGE_READ_MODEL", "")}}, nil
+				return extension.ToolResultData{Content: text, Data: map[string]interface{}{
+					"model": envOr("IMAGE_READ_MODEL", ""),
+					"code":  meta.Code, "mime": meta.Mime, "size": meta.Size,
+				}}, nil
 			},
 		},
 	}

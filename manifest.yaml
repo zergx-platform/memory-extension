@@ -5,6 +5,8 @@ version: 0.1.0
 tools:
   - name: todowrite
     description: Replace the session's todo list (stored in the database, not a file).
+    descriptions:
+      zh: 替换会话的待办列表（存于数据库，而非文件）。
     input_schema:
       type: object
       properties:
@@ -20,6 +22,8 @@ tools:
       required: [todos]
   - name: history_search
     description: Search this session's chat history by keyword (case-insensitive substring over parts(type=text) text, tool names and change ids), optionally constrained to a time range [from, to] (YYYY-MM-DD HH:MM:SS). Returns messages newest-first with their role, depth (0 = newest), tool name and workspace change id.
+    descriptions:
+      zh: 按关键词搜索本会话的聊天历史（对 parts(type=text) 文本、工具名、change id 做大小写不敏感的子串匹配），可选时间范围 [from, to]（YYYY-MM-DD HH:MM:SS）。按最新在前返回消息及其角色、深度（0=最新）、工具名与工作区 change id。
     input_schema:
       type: object
       properties:
@@ -30,6 +34,8 @@ tools:
       required: [query]
   - name: history_range
     description: Read this session's chat history by position (depth) window. depth 0 = the newest message; positive numbers go back in time; negative numbers count from the newest side (-1 = newest). Returns [depth_from, depth_to) oldest-first with role, content, tool name and change id.
+    descriptions:
+      zh: 按位置（深度）窗口读取本会话的聊天历史。depth 0 = 最新消息；正数向更早回溯；负数从最新一侧计数（-1 = 最新）。返回 [depth_from, depth_to)，最旧在前，含角色、内容、工具名与 change id。
     input_schema:
       type: object
       properties:
@@ -42,6 +48,8 @@ tools:
   # never sees the bytes directly.
   - name: file_info
     description: Return metadata (name, mime type, size, sha256) for a previously uploaded file referenced as file:<code>. Use this first to learn a file's type and size before deciding to read or analyze it.
+    descriptions:
+      zh: 返回以 file:<code> 引用的已上传文件元数据（名称、mime、大小、sha256）。先调用它以了解文件类型与大小，再决定读取或分析。
     input_schema:
       type: object
       properties:
@@ -49,6 +57,8 @@ tools:
       required: [code]
   - name: image_read
     description: Understand a previously uploaded image referenced as file:<code> using a vision model. Pass a question (prompt); the model returns a natural-language description/answer about the image. The image is downscaled before sending.
+    descriptions:
+      zh: 使用视觉模型理解以 file:<code> 引用的已上传图片。传入问题（prompt）；模型返回对图片的自然语言描述/回答。发送前会先缩小图片。
     input_schema:
       type: object
       properties:

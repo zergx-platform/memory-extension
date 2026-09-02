@@ -3,7 +3,7 @@ module github.com/zergx-platform/memory-extension
 go 1.26
 
 require (
-	github.com/abcp-sdk/abc-protocol-go v1.0.3
+	github.com/abcp-sdk/abc-protocol-go v1.0.6
 	github.com/go-chi/chi/v5 v5.3.2
 	github.com/jackc/pgx/v5 v5.10.0
 	golang.org/x/image v0.45.0
