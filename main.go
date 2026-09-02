@@ -20,8 +20,6 @@ import (
 	"github.com/abcp-sdk/abc-protocol-go/extension"
 	"github.com/abcp-sdk/abc-protocol-go/manifest"
 	natsbus "github.com/abcp-sdk/abc-protocol-go/transport/nats"
-	"github.com/zergx-platform/memory-extension/internal/env"
-	"github.com/zergx-platform/memory-extension/internal/jsonwrite"
 )
 
 //go:embed manifest.yaml
@@ -66,7 +64,7 @@ func main() {
 
 	s := &server{pool: pool}
 
-	nbus, err := natsbus.Connect(env.Or("NATS_URL", "nats://nats.zergx.svc.cluster.local:4222"))
+	nbus, err := natsbus.Connect(envOr("NATS_URL", "nats://nats.zergx.svc.cluster.local:4222"))
 	if err != nil {
 		log.Error("nats connect failed", "err", err)
 		os.Exit(1)
@@ -98,11 +96,11 @@ type PgConfig struct {
 
 func pgConfig() PgConfig {
 	return PgConfig{
-		Host:     env.Or("POSTGRES_HOST", "postgres.zergx.svc.cluster.local"),
-		Port:     env.NormalizePort(env.Or("POSTGRES_PORT", "5432")),
-		User:     env.Or("POSTGRES_USER", "root"),
-		Password: env.Or("POSTGRES_PASSWORD", "devpassword"),
-		DB:       env.Or("POSTGRES_DB_AGENT", "zergx_agent"),
+		Host:     envOr("POSTGRES_HOST", "postgres.zergx.svc.cluster.local"),
+		Port:     envNormalizePort(envOr("POSTGRES_PORT", "5432")),
+		User:     envOr("POSTGRES_USER", "root"),
+		Password: envOr("POSTGRES_PASSWORD", "devpassword"),
+		DB:       envOr("POSTGRES_DB_AGENT", "zergx_agent"),
 	}
 }
 
@@ -278,7 +276,7 @@ func (s *server) router() http.Handler {
 	r := chi.NewRouter()
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Get("/health", func(w http.ResponseWriter, _ *http.Request) {
-			jsonwrite.JSON(w, http.StatusOK, map[string]interface{}{"ok": true, "name": "memory-extension"})
+			writeJSON(w, http.StatusOK, map[string]interface{}{"ok": true, "name": "memory-extension"})
 		})
 		r.Get("/todos", s.listTodosHTTP)
 		r.Post("/todos", s.writeTodosHTTP)
@@ -294,7 +292,7 @@ func (s *server) searchHTTP(w http.ResponseWriter, r *http.Request) {
 		sid = r.URL.Query().Get("session_id")
 	}
 	if sid == "" {
-		jsonwrite.JSON(w, http.StatusBadRequest, map[string]interface{}{"ok": false, "error": "session required"})
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"ok": false, "error": "session required"})
 		return
 	}
 	limit := atoiDefault(r.URL.Query().Get("limit"), 50)
@@ -306,10 +304,10 @@ func (s *server) searchHTTP(w http.ResponseWriter, r *http.Request) {
 		limit:   limit,
 	})
 	if err != nil {
-		jsonwrite.JSON(w, http.StatusInternalServerError, map[string]interface{}{"ok": false, "error": err.Error()})
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"ok": false, "error": err.Error()})
 		return
 	}
-	jsonwrite.JSON(w, http.StatusOK, map[string]interface{}{"entries": entries})
+	writeJSON(w, http.StatusOK, map[string]interface{}{"entries": entries})
 }
 
 func (s *server) rangeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -318,7 +316,7 @@ func (s *server) rangeHTTP(w http.ResponseWriter, r *http.Request) {
 		sid = r.URL.Query().Get("session_id")
 	}
 	if sid == "" {
-		jsonwrite.JSON(w, http.StatusBadRequest, map[string]interface{}{"ok": false, "error": "session required"})
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"ok": false, "error": "session required"})
 		return
 	}
 	from := atoiDefault(r.URL.Query().Get("from"), 0)
@@ -326,10 +324,10 @@ func (s *server) rangeHTTP(w http.ResponseWriter, r *http.Request) {
 	limit := atoiDefault(r.URL.Query().Get("limit"), 200)
 	entries, err := s.chainEntries(r.Context(), sid, from, to, limit)
 	if err != nil {
-		jsonwrite.JSON(w, http.StatusInternalServerError, map[string]interface{}{"ok": false, "error": err.Error()})
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"ok": false, "error": err.Error()})
 		return
 	}
-	jsonwrite.JSON(w, http.StatusOK, map[string]interface{}{"entries": entries})
+	writeJSON(w, http.StatusOK, map[string]interface{}{"entries": entries})
 }
 
 func atoiDefault(s string, def int) int {
@@ -350,10 +348,10 @@ func (s *server) listTodosHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	todos, err := s.listTodos(r.Context(), sid)
 	if err != nil {
-		jsonwrite.JSON(w, http.StatusInternalServerError, map[string]interface{}{"ok": false, "error": err.Error()})
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"ok": false, "error": err.Error()})
 		return
 	}
-	jsonwrite.JSON(w, http.StatusOK, map[string]interface{}{"todos": todos})
+	writeJSON(w, http.StatusOK, map[string]interface{}{"todos": todos})
 }
 
 func (s *server) writeTodosHTTP(w http.ResponseWriter, r *http.Request) {
@@ -363,7 +361,7 @@ func (s *server) writeTodosHTTP(w http.ResponseWriter, r *http.Request) {
 		Todos      []map[string]interface{} `json:"todos"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		jsonwrite.JSON(w, http.StatusBadRequest, map[string]interface{}{"ok": false, "error": "invalid body"})
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"ok": false, "error": "invalid body"})
 		return
 	}
 	sid := body.SessionID
@@ -375,10 +373,10 @@ func (s *server) writeTodosHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	n, err := s.writeTodos(r.Context(), sid, body.Todos)
 	if err != nil {
-		jsonwrite.JSON(w, http.StatusInternalServerError, map[string]interface{}{"ok": false, "error": err.Error()})
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"ok": false, "error": err.Error()})
 		return
 	}
-	jsonwrite.JSON(w, http.StatusOK, map[string]interface{}{"ok": true, "count": n})
+	writeJSON(w, http.StatusOK, map[string]interface{}{"ok": true, "count": n})
 }
 
 // ---- helpers ----

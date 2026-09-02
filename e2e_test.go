@@ -10,8 +10,8 @@ import (
 	"github.com/abcp-sdk/abc-protocol-go/agent"
 	"github.com/abcp-sdk/abc-protocol-go/extension"
 	"github.com/abcp-sdk/abc-protocol-go/manifest"
-	natsbus "github.com/abcp-sdk/abc-protocol-go/transport/nats"
 	"github.com/abcp-sdk/abc-protocol-go/natsrun"
+	natsbus "github.com/abcp-sdk/abc-protocol-go/transport/nats"
 )
 
 // ---- manifest binding ----

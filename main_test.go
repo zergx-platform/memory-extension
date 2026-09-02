@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/zergx-platform/memory-extension/internal/env"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -25,11 +24,11 @@ func testPool(t *testing.T) *pgxpool.Pool {
 		t.Skip("set MEMORY_TEST_PG=1 to run PG-backed tests")
 	}
 	cfg := PgConfig{
-		Host:     env.Or("MEMORY_TEST_PG_HOST", "postgres.zergx.svc.cluster.local"),
-		Port:     env.NormalizePort(env.Or("MEMORY_TEST_PG_PORT", "5432")),
-		User:     env.Or("MEMORY_TEST_PG_USER", "root"),
-		Password: env.Or("MEMORY_TEST_PG_PASSWORD", "devpassword"),
-		DB:       env.Or("MEMORY_TEST_PG_DB", "zergx_agent"),
+		Host:     envOr("MEMORY_TEST_PG_HOST", "postgres.zergx.svc.cluster.local"),
+		Port:     envNormalizePort(envOr("MEMORY_TEST_PG_PORT", "5432")),
+		User:     envOr("MEMORY_TEST_PG_USER", "root"),
+		Password: envOr("MEMORY_TEST_PG_PASSWORD", "devpassword"),
+		DB:       envOr("MEMORY_TEST_PG_DB", "zergx_agent"),
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
