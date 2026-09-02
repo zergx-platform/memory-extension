@@ -1,15 +1,18 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -35,8 +38,9 @@ var manifestYaml []byte
 // version's schema so no data migration is required.
 
 type server struct {
-	pool *pgxpool.Pool
-	ext  *extension.Extension
+	pool  *pgxpool.Pool
+	blobs BlobStore
+	ext   *extension.Extension
 }
 
 // Todo mirrors the UI-facing shape (frontend TodoSchema).
@@ -62,7 +66,7 @@ func main() {
 	}
 	defer pool.Close()
 
-	s := &server{pool: pool}
+	s := &server{pool: pool, blobs: NewBlobStore(os.Getenv)}
 
 	nbus, err := natsbus.Connect(envOr("NATS_URL", "nats://nats.zergx.svc.cluster.local:4222"))
 	if err != nil {
@@ -127,7 +131,12 @@ func OpenPool(ctx context.Context, cfg PgConfig) (*pgxpool.Pool, error) {
 			priority TEXT NOT NULL,
 			created_unix BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT)
 		);
-		CREATE INDEX IF NOT EXISTS idx_todos_session ON todos (session_id);`)
+		CREATE INDEX IF NOT EXISTS idx_todos_session ON todos (session_id);
+		CREATE TABLE IF NOT EXISTS file_dedup (
+			sha256 TEXT PRIMARY KEY,
+			code   TEXT NOT NULL UNIQUE,
+			created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT)
+		);`)
 	if err != nil {
 		pool.Close()
 		return nil, err
@@ -267,6 +276,87 @@ func (s *server) handlers() map[string]extension.ToolSpec {
 				return extension.ToolResultData{Content: summary, Data: map[string]interface{}{"count": len(entries), "entries": json.RawMessage(b)}}, nil
 			},
 		},
+		"file_info": {
+			Execute: func(ctx context.Context, args map[string]interface{}, callID string, sessionName string) (extension.ToolResultData, error) {
+				code := abcprotocol.ArgString(args, "code")
+				if code == "" {
+					return extension.ToolResultData{}, fmt.Errorf("code is required")
+				}
+				meta, err := s.blobs.Stat(ctx, code)
+				if err != nil {
+					return extension.ToolResultData{}, fmt.Errorf("file not found: %s", code)
+				}
+				b, _ := json.Marshal(meta)
+				return extension.ToolResultData{
+					Content: fmt.Sprintf("File %s: %s (%s, %d bytes, sha256=%s, uploaded %s)",
+						meta.Code, meta.Name, meta.Mime, meta.Size, meta.Sha256, meta.CreatedAt),
+					Data: map[string]interface{}{"meta": json.RawMessage(b)},
+				}, nil
+			},
+		},
+		"file_read": {
+			Execute: func(ctx context.Context, args map[string]interface{}, callID string, sessionName string) (extension.ToolResultData, error) {
+				code := abcprotocol.ArgString(args, "code")
+				if code == "" {
+					return extension.ToolResultData{}, fmt.Errorf("code is required")
+				}
+				meta, data, err := s.blobs.Get(ctx, code)
+				if err != nil {
+					return extension.ToolResultData{}, fmt.Errorf("file not found: %s", code)
+				}
+				if err := verifySha(meta.Sha256, data); err != nil {
+					return extension.ToolResultData{}, fmt.Errorf("checksum mismatch")
+				}
+				offset := int(abcprotocol.ArgInt(args, "offset", 1))
+				limit := int(abcprotocol.ArgInt(args, "limit", 200))
+				text := string(data)
+				if !looksText(data) {
+					return extension.ToolResultData{
+						Content: fmt.Sprintf("File %s is binary (%s, %d bytes); content not readable as text.", meta.Code, meta.Mime, meta.Size),
+						Data:    map[string]interface{}{"binary": true, "size": meta.Size, "mime": meta.Mime},
+					}, nil
+				}
+				lines := strings.Split(text, "\n")
+				if offset < 1 {
+					offset = 1
+				}
+				if offset > len(lines) {
+					offset = len(lines)
+				}
+				end := offset - 1 + limit
+				if end > len(lines) {
+					end = len(lines)
+				}
+				if offset-1 > len(lines) {
+					return extension.ToolResultData{Content: "Empty or out-of-range.", Data: map[string]interface{}{"total_lines": len(lines)}}, nil
+				}
+				body := strings.Join(lines[offset-1:end], "\n")
+				return extension.ToolResultData{
+					Content: fmt.Sprintf("File %s (%s, %d bytes):\n%s", meta.Code, meta.Mime, meta.Size, body),
+					Data:    map[string]interface{}{"total_lines": len(lines), "shown": end - (offset - 1)},
+				}, nil
+			},
+		},
+		"file_url": {
+			Execute: func(ctx context.Context, args map[string]interface{}, callID string, sessionName string) (extension.ToolResultData, error) {
+				code := abcprotocol.ArgString(args, "code")
+				if code == "" {
+					return extension.ToolResultData{}, fmt.Errorf("code is required")
+				}
+				if _, err := s.blobs.Stat(ctx, code); err != nil {
+					return extension.ToolResultData{}, fmt.Errorf("file not found: %s", code)
+				}
+				ttl := time.Duration(envInt("FILES_PRESIGN_TTL_SECS", 900)) * time.Second
+				url, err := s.blobs.Presign(ctx, code, ttl)
+				if err != nil {
+					return extension.ToolResultData{}, fmt.Errorf("presign not supported: %w", err)
+				}
+				return extension.ToolResultData{
+					Content: fmt.Sprintf("Direct download URL (valid %d s): %s", int(ttl.Seconds()), url),
+					Data:    map[string]interface{}{"url": url, "ttl_secs": int(ttl.Seconds())},
+				}, nil
+			},
+		},
 	}
 }
 
@@ -282,6 +372,10 @@ func (s *server) router() http.Handler {
 		r.Post("/todos", s.writeTodosHTTP)
 		r.Get("/history/search", s.searchHTTP)
 		r.Get("/history/range", s.rangeHTTP)
+		r.Post("/files", s.uploadFile)
+		r.Get("/files/{code}", s.getFile)
+		r.Get("/files/{code}/meta", s.fileMeta)
+		r.Post("/files/{code}/presign", s.filePresign)
 	})
 	return r
 }
@@ -380,6 +474,195 @@ func (s *server) writeTodosHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // ---- helpers ----
+
+// ---- file storage ----
+
+// uploadFile handles an S3-style multipart upload. It computes the content
+// sha256, dedups against the index, and on a new file stores bytes + metadata
+// in the blob store and records the sha256→code mapping in the index.
+func (s *server) uploadFile(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseMultipartForm(64 << 20); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"ok": false, "error": "invalid multipart: " + err.Error()})
+		return
+	}
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"ok": false, "error": "file field required"})
+		return
+	}
+	defer file.Close()
+
+	buf, err := readAll(file)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"ok": false, "error": err.Error()})
+		return
+	}
+	if len(buf) == 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"ok": false, "error": "empty file"})
+		return
+	}
+
+	hash := sha256Hex(buf)
+	uploader := r.FormValue("uploader_session")
+
+	// Dedup: reuse the existing code for the same content.
+	if code, ok := s.codeForHash(r.Context(), hash); ok {
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"ok": true, "code": code, "hash": hash, "name": header.Filename,
+			"mime": header.Header.Get("Content-Type"),
+			"size": len(buf), "deduped": true,
+		})
+		return
+	}
+
+	// New file: mint a random object key and persist.
+	code := randomCode(defaultCodeLength)
+	meta := FileMeta{
+		Code:            code,
+		Name:            header.Filename,
+		Mime:            header.Header.Get("Content-Type"),
+		Size:            int64(len(buf)),
+		UploaderSession: uploader,
+		CreatedAt:       time.Now().UTC().Format(time.RFC3339),
+		Sha256:          hash,
+	}
+	if err := s.blobs.Put(r.Context(), meta, buf); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"ok": false, "error": "storage put failed: " + err.Error()})
+		return
+	}
+	if err := s.indexCode(r.Context(), hash, code); err != nil {
+		// Best-effort: the object exists but the index write failed; still
+		// return the code so the uploader can use it, but flag it.
+		slog.Warn("file_dedup index failed", "hash", hash, "code", code, "err", err)
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"ok": true, "code": code, "hash": hash, "name": header.Filename,
+		"mime": header.Header.Get("Content-Type"),
+		"size": len(buf), "deduped": false,
+	})
+}
+
+// getFile streams the object bytes with its metadata. It is the frontend's
+// download/preview endpoint (e.g. rendering an image thumbnail).
+func (s *server) getFile(w http.ResponseWriter, r *http.Request) {
+	code := chi.URLParam(r, "code")
+	meta, data, err := s.blobs.Get(r.Context(), code)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]interface{}{"ok": false, "error": "file not found"})
+		return
+	}
+	if err := verifySha(meta.Sha256, data); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"ok": false, "error": "checksum mismatch"})
+		return
+	}
+	ct := meta.Mime
+	if ct == "" {
+		ct = "application/octet-stream"
+	}
+	w.Header().Set("Content-Type", ct)
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(data)))
+	if meta.Name != "" {
+		w.Header().Set("Content-Disposition", "inline; filename=\""+sanitizeFilename(meta.Name)+"\"")
+	}
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(data)
+}
+
+// fileMeta returns only the object metadata (no bytes).
+func (s *server) fileMeta(w http.ResponseWriter, r *http.Request) {
+	code := chi.URLParam(r, "code")
+	meta, err := s.blobs.Stat(r.Context(), code)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]interface{}{"ok": false, "error": "file not found"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"ok": true, "meta": meta})
+}
+
+// filePresign mints a short-lived presigned GET URL (S3 backend only). It is
+// used to hand a sandbox / worker a direct, credential-less download of a
+// large file. The local backend has no presign support and returns an error.
+func (s *server) filePresign(w http.ResponseWriter, r *http.Request) {
+	code := chi.URLParam(r, "code")
+	ttl := time.Duration(envInt("FILES_PRESIGN_TTL_SECS", 900)) * time.Second
+	if _, err := s.blobs.Stat(r.Context(), code); err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]interface{}{"ok": false, "error": "file not found"})
+		return
+	}
+	url, err := s.blobs.Presign(r.Context(), code, ttl)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"ok": false, "error": "presign not supported"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"ok": true, "url": url, "ttl_secs": int64(ttl.Seconds())})
+}
+
+// ---- file index (sha256 → code) ----
+
+func (s *server) codeForHash(ctx context.Context, hash string) (string, bool) {
+	var code string
+	err := s.pool.QueryRow(ctx, `SELECT code FROM file_dedup WHERE sha256 = $1`, hash).Scan(&code)
+	if err != nil {
+		return "", false
+	}
+	return code, true
+}
+
+func (s *server) indexCode(ctx context.Context, hash, code string) error {
+	_, err := s.pool.Exec(ctx,
+		`INSERT INTO file_dedup (sha256, code) VALUES ($1, $2)
+		 ON CONFLICT (sha256) DO NOTHING`, hash, code)
+	return err
+}
+
+// ---- helpers ----
+
+func readAll(f interface{ Read([]byte) (int, error) }) ([]byte, error) {
+	var buf bytes.Buffer
+	if _, err := io.Copy(&buf, f); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+func verifySha(expect string, data []byte) error {
+	if expect == "" {
+		return nil
+	}
+	if sha256Hex(data) != expect {
+		return fmt.Errorf("sha256 mismatch")
+	}
+	return nil
+}
+
+func looksText(b []byte) bool {
+	if len(b) == 0 {
+		return true
+	}
+	if len(b) > 1<<20 {
+		// Only sniff the head of large files; treat oversized tails as binary.
+		b = b[:1<<20]
+	}
+	for _, c := range b {
+		if c == 0 {
+			return false
+		}
+	}
+	return true
+}
+
+func sanitizeFilename(name string) string {
+	name = strings.Map(func(r rune) rune {
+		if r == '"' || r == '\\' || r < 32 {
+			return '_'
+		}
+		return r
+	}, name)
+	if name == "" {
+		return "file"
+	}
+	return name
+}
 
 func strArg(m map[string]interface{}, k string) string {
 	if v, ok := m[k].(string); ok {

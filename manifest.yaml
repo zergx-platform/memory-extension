@@ -36,3 +36,30 @@ tools:
         from: { type: integer }
         to: { type: integer }
         limit: { type: integer }
+  # ---- file storage (uploaded attachments) ----
+  # An attachment is referenced in chat as `file:<code>` (its 8-char, content
+  # sha256-based object key). The model resolves it through these tools; it
+  # never sees the bytes directly.
+  - name: file_info
+    description: Return metadata (name, mime type, size, sha256) for a previously uploaded file referenced as file:<code>. Use this first to learn a file's type and size before deciding to read or analyze it.
+    input_schema:
+      type: object
+      properties:
+        code: { type: string, description: "The file code (the 8-char segment after file:)" }
+      required: [code]
+  - name: file_read
+    description: Read the text content of an uploaded file referenced as file:<code>. Returns the leading bytes (up to limit lines / offset window). Binary files (e.g. images) are not readable as text — use file_info and be aware of the mime type.
+    input_schema:
+      type: object
+      properties:
+        code: { type: string, description: "The file code (the 8-char segment after file:)" }
+        offset: { type: integer, description: "Starting line (1-based, default 1)" }
+        limit: { type: integer, description: "Max lines to return (default 200)" }
+      required: [code]
+  - name: file_url
+    description: Get a short-lived presigned download URL for a previously uploaded file referenced as file:<code>. Use this to hand a direct URL to a sandbox (e.g. sandbox-run curl -o) or to fetch the raw bytes yourself.
+    input_schema:
+      type: object
+      properties:
+        code: { type: string, description: "The file code (the 8-char segment after file:)" }
+      required: [code]
