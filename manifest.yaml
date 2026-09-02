@@ -47,19 +47,11 @@ tools:
       properties:
         code: { type: string, description: "The file code (the 8-char segment after file:)" }
       required: [code]
-  - name: file_read
-    description: Read the text content of an uploaded file referenced as file:<code>. Returns the leading bytes (up to limit lines / offset window). Binary files (e.g. images) are not readable as text — use file_info and be aware of the mime type.
+  - name: image_read
+    description: Understand a previously uploaded image referenced as file:<code> using a vision model. Pass a question (prompt); the model returns a natural-language description/answer about the image. The image is downscaled before sending.
     input_schema:
       type: object
       properties:
         code: { type: string, description: "The file code (the 8-char segment after file:)" }
-        offset: { type: integer, description: "Starting line (1-based, default 1)" }
-        limit: { type: integer, description: "Max lines to return (default 200)" }
-      required: [code]
-  - name: file_url
-    description: Get a short-lived presigned download URL for a previously uploaded file referenced as file:<code>. Use this to hand a direct URL to a sandbox (e.g. sandbox-run curl -o) or to fetch the raw bytes yourself.
-    input_schema:
-      type: object
-      properties:
-        code: { type: string, description: "The file code (the 8-char segment after file:)" }
+        prompt: { type: string, description: "Question about the image (default: describe it)", default: "Describe this image" }
       required: [code]

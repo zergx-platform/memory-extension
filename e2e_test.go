@@ -27,8 +27,8 @@ func TestManifestBinding(t *testing.T) {
 	if m.ID != "memory" {
 		t.Fatalf("manifest id = %q", m.ID)
 	}
-	if len(m.Tools) != 6 {
-		t.Fatalf("manifest tools = %d, want 6", len(m.Tools))
+	if len(m.Tools) != 5 {
+		t.Fatalf("manifest tools = %d, want 5", len(m.Tools))
 	}
 
 	cfg := m.BuildConfig(manifest.Bindings{Handlers: manifestHandlers()})
@@ -114,8 +114,8 @@ func TestDiscoverWire(t *testing.T) {
 	if got.Id != "memory" {
 		t.Fatalf("discover id = %q", got.Id)
 	}
-	if len(*got.Tools) != 6 {
-		t.Fatalf("discover tools = %d, want 6", len(*got.Tools))
+	if len(*got.Tools) != 5 {
+		t.Fatalf("discover tools = %d, want 5", len(*got.Tools))
 	}
 	names := map[string]bool{}
 	for _, tool := range *got.Tools {
@@ -124,7 +124,7 @@ func TestDiscoverWire(t *testing.T) {
 			t.Fatalf("discovered tool %q has empty description", tool.Name)
 		}
 	}
-	for _, want := range []string{"todowrite", "history_search", "history_range", "file_info", "file_read", "file_url"} {
+	for _, want := range []string{"todowrite", "history_search", "history_range", "file_info", "image_read"} {
 		if !names[want] {
 			t.Fatalf("discovered tools missing %q: %v", want, names)
 		}

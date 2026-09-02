@@ -38,9 +38,8 @@ var manifestYaml []byte
 // version's schema so no data migration is required.
 
 type server struct {
-	pool  *pgxpool.Pool
-	blobs BlobStore
-	ext   *extension.Extension
+	pool *pgxpool.Pool
+	ext  *extension.Extension
 }
 
 // Todo mirrors the UI-facing shape (frontend TodoSchema).
@@ -66,7 +65,7 @@ func main() {
 	}
 	defer pool.Close()
 
-	s := &server{pool: pool, blobs: NewBlobStore(os.Getenv)}
+	s := &server{pool: pool}
 
 	nbus, err := natsbus.Connect(envOr("NATS_URL", "nats://nats.zergx.svc.cluster.local:4222"))
 	if err != nil {
@@ -131,12 +130,7 @@ func OpenPool(ctx context.Context, cfg PgConfig) (*pgxpool.Pool, error) {
 			priority TEXT NOT NULL,
 			created_unix BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT)
 		);
-		CREATE INDEX IF NOT EXISTS idx_todos_session ON todos (session_id);
-		CREATE TABLE IF NOT EXISTS file_dedup (
-			sha256 TEXT PRIMARY KEY,
-			code   TEXT NOT NULL UNIQUE,
-			created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT)
-		);`)
+		CREATE INDEX IF NOT EXISTS idx_todos_session ON todos (session_id);`)
 	if err != nil {
 		pool.Close()
 		return nil, err
@@ -282,7 +276,7 @@ func (s *server) handlers() map[string]extension.ToolSpec {
 				if code == "" {
 					return extension.ToolResultData{}, fmt.Errorf("code is required")
 				}
-				meta, err := s.blobs.Stat(ctx, code)
+				meta, err := s.fileMetaFromAgent(ctx, code)
 				if err != nil {
 					return extension.ToolResultData{}, fmt.Errorf("file not found: %s", code)
 				}
@@ -294,70 +288,95 @@ func (s *server) handlers() map[string]extension.ToolSpec {
 				}, nil
 			},
 		},
-		"file_read": {
+		"image_read": {
 			Execute: func(ctx context.Context, args map[string]interface{}, callID string, sessionName string) (extension.ToolResultData, error) {
 				code := abcprotocol.ArgString(args, "code")
 				if code == "" {
 					return extension.ToolResultData{}, fmt.Errorf("code is required")
 				}
-				meta, data, err := s.blobs.Get(ctx, code)
+				prompt := abcprotocol.ArgString(args, "prompt")
+				if prompt == "" {
+					prompt = "Describe this image"
+				}
+				meta, bytes, err := s.fileBytesFromAgent(ctx, code)
 				if err != nil {
 					return extension.ToolResultData{}, fmt.Errorf("file not found: %s", code)
 				}
-				if err := verifySha(meta.Sha256, data); err != nil {
-					return extension.ToolResultData{}, fmt.Errorf("checksum mismatch")
+				if !strings.HasPrefix(meta.Mime, "image/") {
+					return extension.ToolResultData{}, fmt.Errorf("file %s is not an image (%s)", meta.Code, meta.Mime)
 				}
-				offset := int(abcprotocol.ArgInt(args, "offset", 1))
-				limit := int(abcprotocol.ArgInt(args, "limit", 200))
-				text := string(data)
-				if !looksText(data) {
-					return extension.ToolResultData{
-						Content: fmt.Sprintf("File %s is binary (%s, %d bytes); content not readable as text.", meta.Code, meta.Mime, meta.Size),
-						Data:    map[string]interface{}{"binary": true, "size": meta.Size, "mime": meta.Mime},
-					}, nil
-				}
-				lines := strings.Split(text, "\n")
-				if offset < 1 {
-					offset = 1
-				}
-				if offset > len(lines) {
-					offset = len(lines)
-				}
-				end := offset - 1 + limit
-				if end > len(lines) {
-					end = len(lines)
-				}
-				if offset-1 > len(lines) {
-					return extension.ToolResultData{Content: "Empty or out-of-range.", Data: map[string]interface{}{"total_lines": len(lines)}}, nil
-				}
-				body := strings.Join(lines[offset-1:end], "\n")
-				return extension.ToolResultData{
-					Content: fmt.Sprintf("File %s (%s, %d bytes):\n%s", meta.Code, meta.Mime, meta.Size, body),
-					Data:    map[string]interface{}{"total_lines": len(lines), "shown": end - (offset - 1)},
-				}, nil
-			},
-		},
-		"file_url": {
-			Execute: func(ctx context.Context, args map[string]interface{}, callID string, sessionName string) (extension.ToolResultData, error) {
-				code := abcprotocol.ArgString(args, "code")
-				if code == "" {
-					return extension.ToolResultData{}, fmt.Errorf("code is required")
-				}
-				if _, err := s.blobs.Stat(ctx, code); err != nil {
-					return extension.ToolResultData{}, fmt.Errorf("file not found: %s", code)
-				}
-				ttl := time.Duration(envInt("FILES_PRESIGN_TTL_SECS", 900)) * time.Second
-				url, err := s.blobs.Presign(ctx, code, ttl)
+				// Downscale before sending so oversized images stay within the
+				// VLM input budget (never ship the raw bytes).
+				b64, err := resizeToDataURL(bytes, meta.Mime, envInt("IMAGE_READ_MAX_DIM", 1024), envInt("IMAGE_READ_JPEG_QUALITY", 85))
 				if err != nil {
-					return extension.ToolResultData{}, fmt.Errorf("presign not supported: %w", err)
+					return extension.ToolResultData{}, fmt.Errorf("image resize failed: %w", err)
 				}
-				return extension.ToolResultData{
-					Content: fmt.Sprintf("Direct download URL (valid %d s): %s", int(ttl.Seconds()), url),
-					Data:    map[string]interface{}{"url": url, "ttl_secs": int(ttl.Seconds())},
-				}, nil
+				text, err := s.vlmChat(ctx, prompt, b64)
+				if err != nil {
+					return extension.ToolResultData{}, fmt.Errorf("image_read failed: %w", err)
+				}
+				return extension.ToolResultData{Content: text, Data: map[string]interface{}{"model": envOr("IMAGE_READ_MODEL", "")}}, nil
 			},
 		},
 	}
+}
+
+// vlmChat performs a single-turn VLM completion by delegating to the agent's
+// OpenAI-compatible `POST /api/v1/llm/chat/completions`. The agent resolves
+// the `provider_id/model_id` reference against its registered providers, so
+// the extension never holds base_url/api_key.
+func (s *server) vlmChat(ctx context.Context, prompt, imageDataURL string) (string, error) {
+	agentURL := envOr("AGENT_BASE_URL", envOr("ZERGX_AGENT_URL", "http://agent.zergx.svc.cluster.local:80"))
+	model := envOr("IMAGE_READ_MODEL", "")
+	if model == "" {
+		// Prefer the provider most likely to be vision-capable, else the
+		// default model ref. Overridable via env throughout.
+		model = envOr("ZERGX_LLM_MODEL", "deepseek-v4-pro")
+	}
+	body := map[string]interface{}{
+		"model": model,
+		"messages": []map[string]interface{}{
+			{
+				"role": "user",
+				"content": []map[string]interface{}{
+					{"type": "text", "text": prompt},
+					{"type": "image", "image": imageDataURL},
+				},
+			},
+		},
+	}
+	payload, _ := json.Marshal(body)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(agentURL, "/")+"/api/v1/llm/chat/completions", bytes.NewReader(payload))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if tok := envOr("AGENT_API_KEY", ""); tok != "" {
+		req.Header.Set("Authorization", "Bearer "+tok)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	respBody, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != 200 {
+		return "", fmt.Errorf("agent LLM endpoint HTTP %d: %.200s", resp.StatusCode, respBody)
+	}
+	var envelope struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	if err := json.Unmarshal(respBody, &envelope); err != nil {
+		return "", fmt.Errorf("decode agent response: %w", err)
+	}
+	if len(envelope.Choices) == 0 {
+		return "", fmt.Errorf("agent returned no choices")
+	}
+	return envelope.Choices[0].Message.Content, nil
 }
 
 // ---- HTTP ----
@@ -372,10 +391,6 @@ func (s *server) router() http.Handler {
 		r.Post("/todos", s.writeTodosHTTP)
 		r.Get("/history/search", s.searchHTTP)
 		r.Get("/history/range", s.rangeHTTP)
-		r.Post("/files", s.uploadFile)
-		r.Get("/files/{code}", s.getFile)
-		r.Get("/files/{code}/meta", s.fileMeta)
-		r.Post("/files/{code}/presign", s.filePresign)
 	})
 	return r
 }
@@ -475,193 +490,61 @@ func (s *server) writeTodosHTTP(w http.ResponseWriter, r *http.Request) {
 
 // ---- helpers ----
 
-// ---- file storage ----
-
-// uploadFile handles an S3-style multipart upload. It computes the content
-// sha256, dedups against the index, and on a new file stores bytes + metadata
-// in the blob store and records the sha256→code mapping in the index.
-func (s *server) uploadFile(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseMultipartForm(64 << 20); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"ok": false, "error": "invalid multipart: " + err.Error()})
-		return
-	}
-	file, header, err := r.FormFile("file")
+// fileMetaFromAgent fetches a file's metadata from the agent's files API.
+func (s *server) fileMetaFromAgent(ctx context.Context, code string) (FileMeta, error) {
+	agentURL := envOr("AGENT_BASE_URL", envOr("ZERGX_AGENT_URL", "http://agent.zergx.svc.cluster.local:80"))
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		strings.TrimRight(agentURL, "/")+"/api/v1/files/"+code+"/meta", nil)
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"ok": false, "error": "file field required"})
-		return
+		return FileMeta{}, err
 	}
-	defer file.Close()
-
-	buf, err := readAll(file)
+	if tok := envOr("AGENT_API_KEY", ""); tok != "" {
+		req.Header.Set("Authorization", "Bearer "+tok)
+	}
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"ok": false, "error": err.Error()})
-		return
+		return FileMeta{}, err
 	}
-	if len(buf) == 0 {
-		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"ok": false, "error": "empty file"})
-		return
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		return FileMeta{}, fmt.Errorf("agent files API HTTP %d", resp.StatusCode)
 	}
-
-	hash := sha256Hex(buf)
-	uploader := r.FormValue("uploader_session")
-
-	// Dedup: reuse the existing code for the same content.
-	if code, ok := s.codeForHash(r.Context(), hash); ok {
-		writeJSON(w, http.StatusOK, map[string]interface{}{
-			"ok": true, "code": code, "hash": hash, "name": header.Filename,
-			"mime": header.Header.Get("Content-Type"),
-			"size": len(buf), "deduped": true,
-		})
-		return
+	var meta FileMeta
+	if err := json.NewDecoder(resp.Body).Decode(&meta); err != nil {
+		return FileMeta{}, err
 	}
-
-	// New file: mint a random object key and persist.
-	code := randomCode(defaultCodeLength)
-	meta := FileMeta{
-		Code:            code,
-		Name:            header.Filename,
-		Mime:            header.Header.Get("Content-Type"),
-		Size:            int64(len(buf)),
-		UploaderSession: uploader,
-		CreatedAt:       time.Now().UTC().Format(time.RFC3339),
-		Sha256:          hash,
-	}
-	if err := s.blobs.Put(r.Context(), meta, buf); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"ok": false, "error": "storage put failed: " + err.Error()})
-		return
-	}
-	if err := s.indexCode(r.Context(), hash, code); err != nil {
-		// Best-effort: the object exists but the index write failed; still
-		// return the code so the uploader can use it, but flag it.
-		slog.Warn("file_dedup index failed", "hash", hash, "code", code, "err", err)
-	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"ok": true, "code": code, "hash": hash, "name": header.Filename,
-		"mime": header.Header.Get("Content-Type"),
-		"size": len(buf), "deduped": false,
-	})
+	return meta, nil
 }
 
-// getFile streams the object bytes with its metadata. It is the frontend's
-// download/preview endpoint (e.g. rendering an image thumbnail).
-func (s *server) getFile(w http.ResponseWriter, r *http.Request) {
-	code := chi.URLParam(r, "code")
-	meta, data, err := s.blobs.Get(r.Context(), code)
+// fileBytesFromAgent fetches a file's bytes + metadata from the agent's files API.
+func (s *server) fileBytesFromAgent(ctx context.Context, code string) (FileMeta, []byte, error) {
+	agentURL := envOr("AGENT_BASE_URL", envOr("ZERGX_AGENT_URL", "http://agent.zergx.svc.cluster.local:80"))
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		strings.TrimRight(agentURL, "/")+"/api/v1/files/"+code, nil)
 	if err != nil {
-		writeJSON(w, http.StatusNotFound, map[string]interface{}{"ok": false, "error": "file not found"})
-		return
+		return FileMeta{}, nil, err
 	}
-	if err := verifySha(meta.Sha256, data); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"ok": false, "error": "checksum mismatch"})
-		return
+	if tok := envOr("AGENT_API_KEY", ""); tok != "" {
+		req.Header.Set("Authorization", "Bearer "+tok)
 	}
-	ct := meta.Mime
-	if ct == "" {
-		ct = "application/octet-stream"
-	}
-	w.Header().Set("Content-Type", ct)
-	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(data)))
-	if meta.Name != "" {
-		w.Header().Set("Content-Disposition", "inline; filename=\""+sanitizeFilename(meta.Name)+"\"")
-	}
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(data)
-}
-
-// fileMeta returns only the object metadata (no bytes).
-func (s *server) fileMeta(w http.ResponseWriter, r *http.Request) {
-	code := chi.URLParam(r, "code")
-	meta, err := s.blobs.Stat(r.Context(), code)
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		writeJSON(w, http.StatusNotFound, map[string]interface{}{"ok": false, "error": "file not found"})
-		return
+		return FileMeta{}, nil, err
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{"ok": true, "meta": meta})
-}
-
-// filePresign mints a short-lived presigned GET URL (S3 backend only). It is
-// used to hand a sandbox / worker a direct, credential-less download of a
-// large file. The local backend has no presign support and returns an error.
-func (s *server) filePresign(w http.ResponseWriter, r *http.Request) {
-	code := chi.URLParam(r, "code")
-	ttl := time.Duration(envInt("FILES_PRESIGN_TTL_SECS", 900)) * time.Second
-	if _, err := s.blobs.Stat(r.Context(), code); err != nil {
-		writeJSON(w, http.StatusNotFound, map[string]interface{}{"ok": false, "error": "file not found"})
-		return
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		return FileMeta{}, nil, fmt.Errorf("agent files API HTTP %d", resp.StatusCode)
 	}
-	url, err := s.blobs.Presign(r.Context(), code, ttl)
+	data, err := io.ReadAll(resp.Body)
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"ok": false, "error": "presign not supported"})
-		return
+		return FileMeta{}, nil, err
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{"ok": true, "url": url, "ttl_secs": int64(ttl.Seconds())})
-}
-
-// ---- file index (sha256 → code) ----
-
-func (s *server) codeForHash(ctx context.Context, hash string) (string, bool) {
-	var code string
-	err := s.pool.QueryRow(ctx, `SELECT code FROM file_dedup WHERE sha256 = $1`, hash).Scan(&code)
-	if err != nil {
-		return "", false
+	meta := FileMeta{Code: code, Mime: resp.Header.Get("Content-Type"), Size: int64(len(data))}
+	// Prefer metadata from the meta endpoint when available.
+	if m, merr := s.fileMetaFromAgent(ctx, code); merr == nil {
+		meta = m
 	}
-	return code, true
-}
-
-func (s *server) indexCode(ctx context.Context, hash, code string) error {
-	_, err := s.pool.Exec(ctx,
-		`INSERT INTO file_dedup (sha256, code) VALUES ($1, $2)
-		 ON CONFLICT (sha256) DO NOTHING`, hash, code)
-	return err
-}
-
-// ---- helpers ----
-
-func readAll(f interface{ Read([]byte) (int, error) }) ([]byte, error) {
-	var buf bytes.Buffer
-	if _, err := io.Copy(&buf, f); err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
-}
-
-func verifySha(expect string, data []byte) error {
-	if expect == "" {
-		return nil
-	}
-	if sha256Hex(data) != expect {
-		return fmt.Errorf("sha256 mismatch")
-	}
-	return nil
-}
-
-func looksText(b []byte) bool {
-	if len(b) == 0 {
-		return true
-	}
-	if len(b) > 1<<20 {
-		// Only sniff the head of large files; treat oversized tails as binary.
-		b = b[:1<<20]
-	}
-	for _, c := range b {
-		if c == 0 {
-			return false
-		}
-	}
-	return true
-}
-
-func sanitizeFilename(name string) string {
-	name = strings.Map(func(r rune) rune {
-		if r == '"' || r == '\\' || r < 32 {
-			return '_'
-		}
-		return r
-	}, name)
-	if name == "" {
-		return "file"
-	}
-	return name
+	return meta, data, nil
 }
 
 func strArg(m map[string]interface{}, k string) string {
