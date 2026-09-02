@@ -12,7 +12,7 @@ ENV HTTP_PROXY=${HTTP_PROXY} \
     GONOSUMDB=abep.dev/sdk,abep.dev/sdk/nats,abep.dev/sdk/ws \
     GOFLAGS=-mod=mod
 RUN sed -i 's|dl-cdn.alpinelinux.org|mirrors.aliyun.com|g' /etc/apk/repositories \
-    && apk add --no-cache git \
+    && apk add --no-cache git
 WORKDIR /build
 COPY go.mod go.sum ./
 RUN go mod download
