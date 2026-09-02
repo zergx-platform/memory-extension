@@ -20,8 +20,8 @@ import (
 	"github.com/abcp-sdk/abc-protocol-go/extension"
 	"github.com/abcp-sdk/abc-protocol-go/manifest"
 	natsbus "github.com/abcp-sdk/abc-protocol-go/transport/nats"
-	"forgejo.develop.10.199.64.20.nip.io/zergx/memory-extension/internal/env"
-	"forgejo.develop.10.199.64.20.nip.io/zergx/memory-extension/internal/jsonwrite"
+	"github.com/zergx-platform/memory-extension/internal/env"
+	"github.com/zergx-platform/memory-extension/internal/jsonwrite"
 )
 
 //go:embed manifest.yaml

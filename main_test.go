@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"forgejo.develop.10.199.64.20.nip.io/zergx/memory-extension/internal/env"
+	"github.com/zergx-platform/memory-extension/internal/env"
 	"net/http"
 	"net/http/httptest"
 	"os"
