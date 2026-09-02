@@ -17,6 +17,7 @@ WORKDIR /build
 COPY go.mod go.sum ./
 RUN go mod download
 COPY *.go ./
+COPY internal/ internal/
 # manifest.yaml is embedded into the binary via go:embed — no sidecar needed.
 COPY manifest.yaml ./
 RUN CGO_ENABLED=0 go build -o /out/memory-extension .
