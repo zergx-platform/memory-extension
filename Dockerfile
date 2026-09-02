@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-ARG REGISTRY=forgejo.develop.10.199.64.20.nip.io/root
+ARG REGISTRY=jj-lab.temp.svc.cluster.local
 FROM ${REGISTRY}/golang:1.26-alpine AS build
 ARG HTTP_PROXY=http://mihomo.develop.svc.cluster.local:7890
 ARG HTTPS_PROXY=http://mihomo.develop.svc.cluster.local:7890
@@ -8,7 +8,7 @@ ENV HTTP_PROXY=${HTTP_PROXY} \
     NO_PROXY=localhost,127.0.0.1,.svc.cluster.local,.svc,.nip.io \
     GOINSECURE=forgejo.develop.10.199.64.20.nip.io \
     GOPRIVATE=forgejo.develop.10.199.64.20.nip.io \
-    GOPROXY=http://artifact.zergx.svc.cluster.local/pkgs/go \
+    GOPROXY=http://jj-lab.temp.svc.cluster.local/pkgs/go \
     GOSUMDB=off \
     GONOSUMDB=abep.dev/sdk,abep.dev/sdk/nats,abep.dev/sdk/ws \
     GOFLAGS=-mod=mod
