@@ -20,8 +20,8 @@ import (
 	"forgejo.develop.10.199.64.20.nip.io/abc-protocol/sdk-go/extension"
 	"forgejo.develop.10.199.64.20.nip.io/abc-protocol/sdk-go/manifest"
 	natsbus "forgejo.develop.10.199.64.20.nip.io/abc-protocol/sdk-go/transport/nats"
-	"forgejo.develop.10.199.64.20.nip.io/zergx/go-shared/env"
-	"forgejo.develop.10.199.64.20.nip.io/zergx/go-shared/jsonwrite"
+	"forgejo.develop.10.199.64.20.nip.io/zergx/memory-extension/internal/env"
+	"forgejo.develop.10.199.64.20.nip.io/zergx/memory-extension/internal/jsonwrite"
 )
 
 //go:embed manifest.yaml
