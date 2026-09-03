@@ -123,3 +123,10 @@ tools:
           descriptions:
             zh: 关于图像的问题（默认：描述该图像）。
       required: [code]
+
+config:
+  - name: vlm_model
+    description: "Vision model ref (provider_id/model_id) used by image_read."
+    type: string
+    scope: global
+    default: ""

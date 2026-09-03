@@ -42,6 +42,18 @@ type server struct {
 	ext  *extension.Extension
 }
 
+// vlmModel resolves the configured vision model for a session (session >
+// global > default), from the extension config store.
+func (s *server) vlmModel(sessionName string) string {
+	if s.ext == nil {
+		return ""
+	}
+	if v, ok := s.ext.GetConfig("vlm_model", sessionName).(string); ok {
+		return v
+	}
+	return ""
+}
+
 // Todo mirrors the UI-facing shape (frontend TodoSchema).
 type Todo struct {
 	ID        string `json:"id"`
@@ -368,7 +380,7 @@ func (s *server) handlers() map[string]extension.ToolSpec {
 					return extension.ToolResultData{}, fmt.Errorf("image_read failed: %w", err)
 				}
 				return extension.ToolResultData{Content: text, Data: map[string]interface{}{
-					"model": envOr("IMAGE_READ_MODEL", ""),
+					"model": s.vlmModel(sessionName),
 					"code":  meta.Code, "mime": meta.Mime, "size": meta.Size,
 				}}, nil
 			},
@@ -379,14 +391,16 @@ func (s *server) handlers() map[string]extension.ToolSpec {
 // vlmChat performs a single-turn VLM completion by delegating to the agent's
 // OpenAI-compatible `POST /api/v1/llm/chat/completions`. The agent resolves
 // the `provider_id/model_id` reference against its registered providers, so
-// the extension never holds base_url/api_key.
+// the extension never holds base_url/api_key. The model comes from the
+// extension config knob 'vlm_model' (session > global > default), falling
+// back to the env vars for backward compatibility.
 func (s *server) vlmChat(ctx context.Context, prompt, imageDataURL string) (string, error) {
 	agentURL := envOr("AGENT_BASE_URL", envOr("ZERGX_AGENT_URL", "http://agent.zergx.svc.cluster.local:80"))
-	model := envOr("IMAGE_READ_MODEL", "")
+	model := s.vlmModel("")
 	if model == "" {
 		// Prefer the provider most likely to be vision-capable, else the
 		// default model ref. Overridable via env throughout.
-		model = envOr("ZERGX_LLM_MODEL", "deepseek-v4-pro")
+		model = envOr("IMAGE_READ_MODEL", envOr("ZERGX_LLM_MODEL", "deepseek-v4-pro"))
 	}
 	body := map[string]interface{}{
 		"model": model,
