@@ -12,12 +12,29 @@ tools:
       properties:
         todos:
           type: array
+          description: The full todo list to replace the session's current one.
+          descriptions:
+            zh: 替换会话当前列表的完整待办列表。
           items:
             type: object
             properties:
-              content: { type: string }
-              status: { type: string, enum: [pending, in_progress, completed, cancelled] }
-              priority: { type: string, enum: [high, medium, low] }
+              content:
+                type: string
+                description: Todo item text.
+                descriptions:
+                  zh: 待办项文本。
+              status:
+                type: string
+                enum: [pending, in_progress, completed, cancelled]
+                description: Todo status.
+                descriptions:
+                  zh: 待办状态。
+              priority:
+                type: string
+                enum: [high, medium, low]
+                description: Todo priority.
+                descriptions:
+                  zh: 待办优先级。
             required: [content, status, priority]
       required: [todos]
   - name: history_search
@@ -27,10 +44,26 @@ tools:
     input_schema:
       type: object
       properties:
-        query: { type: string }
-        from: { type: string }
-        to: { type: string }
-        limit: { type: integer }
+        query:
+          type: string
+          description: Case-insensitive keyword matched against message text, tool names and change ids.
+          descriptions:
+            zh: 不区分大小写的关键词，匹配消息文本、工具名与 change id。
+        from:
+          type: string
+          description: Inclusive lower time bound (YYYY-MM-DD HH:MM:SS).
+          descriptions:
+            zh: 含端点的下界时间（YYYY-MM-DD HH:MM:SS）。
+        to:
+          type: string
+          description: Inclusive upper time bound (YYYY-MM-DD HH:MM:SS).
+          descriptions:
+            zh: 含端点的上界时间（YYYY-MM-DD HH:MM:SS）。
+        limit:
+          type: integer
+          description: Maximum number of messages to return (default 50).
+          descriptions:
+            zh: 最多返回的消息数（默认 50）。
       required: [query]
   - name: history_range
     description: Read this session's chat history by position (depth) window. depth 0 = the newest message; positive numbers go back in time; negative numbers count from the newest side (-1 = newest). Returns [depth_from, depth_to) oldest-first with role, content, tool name and change id.
@@ -39,9 +72,21 @@ tools:
     input_schema:
       type: object
       properties:
-        from: { type: integer }
-        to: { type: integer }
-        limit: { type: integer }
+        from:
+          type: integer
+          description: Starting depth offset (0 = newest message).
+          descriptions:
+            zh: 起始深度偏移（0 = 最新一条消息）。
+        to:
+          type: integer
+          description: Exclusive depth bound.
+          descriptions:
+            zh: 不含端点的深度上界。
+        limit:
+          type: integer
+          description: Maximum number of messages to return (default 50).
+          descriptions:
+            zh: 最多返回的消息数（默认 50）。
   # ---- file storage (uploaded attachments) ----
   # An attachment is referenced in chat as `file:<code>` (its 8-char, content
   # sha256-based object key). The model resolves it through these tools; it
@@ -53,7 +98,11 @@ tools:
     input_schema:
       type: object
       properties:
-        code: { type: string, description: "The file code (the 8-char segment after file:)" }
+        code:
+          type: string
+          description: The file code (the 8-char segment after file:)
+          descriptions:
+            zh: "文件编码（file: 之后的 8 字符部分）。"
       required: [code]
   - name: image_read
     description: Understand a previously uploaded image referenced as file:<code> using a vision model. Pass a question (prompt); the model returns a natural-language description/answer about the image. The image is downscaled before sending.
@@ -62,6 +111,15 @@ tools:
     input_schema:
       type: object
       properties:
-        code: { type: string, description: "The file code (the 8-char segment after file:)" }
-        prompt: { type: string, description: "Question about the image (default: describe it)", default: "Describe this image" }
+        code:
+          type: string
+          description: The file code (the 8-char segment after file:)
+          descriptions:
+            zh: "文件编码（file: 之后的 8 字符部分）。"
+        prompt:
+          type: string
+          description: "Question about the image (default: describe it)"
+          default: "Describe this image"
+          descriptions:
+            zh: 关于图像的问题（默认：描述该图像）。
       required: [code]
