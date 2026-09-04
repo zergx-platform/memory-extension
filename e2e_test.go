@@ -124,7 +124,7 @@ func TestDiscoverWire(t *testing.T) {
 			t.Fatalf("discovered tool %q has empty description", tool.Name)
 		}
 	}
-	for _, want := range []string{"todowrite", "history_search", "history_range", "file_info", "image_read"} {
+	for _, want := range []string{"todowrite", "history-search", "history-range", "file-info", "image-read"} {
 		if !names[want] {
 			t.Fatalf("discovered tools missing %q: %v", want, names)
 		}
@@ -197,7 +197,7 @@ func TestHistorySearchWire(t *testing.T) {
 	defer ext.Close()
 	defer agent.Close()
 
-	res, err := agent.CallTool(context.Background(), sid, "memory", "history_search", "s1",
+	res, err := agent.CallTool(context.Background(), sid, "memory", "history-search", "s1",
 		map[string]interface{}{"query": "needle", "limit": 10})
 	if err != nil {
 		t.Fatalf("history_search wire: %v", err)
@@ -241,7 +241,7 @@ func TestHistoryRangeWire(t *testing.T) {
 	defer ext.Close()
 	defer agent.Close()
 
-	res, err := agent.CallTool(context.Background(), sid, "memory", "history_range", "r1",
+	res, err := agent.CallTool(context.Background(), sid, "memory", "history-range", "r1",
 		map[string]interface{}{"from": 0, "to": 1, "limit": 100})
 	if err != nil {
 		t.Fatalf("history_range wire: %v", err)
@@ -269,7 +269,7 @@ func TestHistorySearchMissingSessionWire(t *testing.T) {
 	defer ext.Close()
 	defer agent.Close()
 
-	res, err := agent.CallTool(context.Background(), "", "memory", "history_search", "e1",
+	res, err := agent.CallTool(context.Background(), "", "memory", "history-search", "e1",
 		map[string]interface{}{"query": "x"})
 	if err != nil {
 		t.Fatalf("history_search should return a tool-level error, got transport error: %v", err)

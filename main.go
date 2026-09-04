@@ -289,7 +289,7 @@ func (s *server) handlers() map[string]extension.ToolSpec {
 				return extension.ToolResultData{Content: content, Data: map[string]interface{}{"count": n}}, nil
 			},
 		},
-		"history_search": {
+		"history-search": {
 			Execute: func(ctx context.Context, args map[string]interface{}, callID string, sessionName string) (extension.ToolResultData, error) {
 				if sessionName == "" {
 					return extension.ToolResultData{}, fmt.Errorf("missing session context (session_name)")
@@ -311,7 +311,7 @@ func (s *server) handlers() map[string]extension.ToolSpec {
 				return extension.ToolResultData{Content: content, Data: map[string]interface{}{"count": len(entries), "entries": json.RawMessage(b)}}, nil
 			},
 		},
-		"history_range": {
+		"history-range": {
 			Execute: func(ctx context.Context, args map[string]interface{}, callID string, sessionName string) (extension.ToolResultData, error) {
 				if sessionName == "" {
 					return extension.ToolResultData{}, fmt.Errorf("missing session context (session_name)")
@@ -329,7 +329,7 @@ func (s *server) handlers() map[string]extension.ToolSpec {
 				return extension.ToolResultData{Content: content, Data: map[string]interface{}{"count": len(entries), "entries": json.RawMessage(b)}}, nil
 			},
 		},
-		"file_info": {
+		"file-info": {
 			Execute: func(ctx context.Context, args map[string]interface{}, callID string, sessionName string) (extension.ToolResultData, error) {
 				code := abcprotocol.ArgString(args, "code")
 				if code == "" {
@@ -352,7 +352,7 @@ func (s *server) handlers() map[string]extension.ToolSpec {
 				}, nil
 			},
 		},
-		"image_read": {
+		"image-read": {
 			Execute: func(ctx context.Context, args map[string]interface{}, callID string, sessionName string) (extension.ToolResultData, error) {
 				code := abcprotocol.ArgString(args, "code")
 				if code == "" {
