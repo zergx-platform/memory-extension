@@ -1,5 +1,11 @@
 github.com/abcp-sdk/abc-protocol-go v1.0.6 h1:2989h4G9fG0dSMDvXLIRF0cjKvvT/F3sWixKXpjbcuc=
 github.com/abcp-sdk/abc-protocol-go v1.0.6/go.mod h1:Pj40eYsDYx1n8Gf2BiQU7Rf9IESUggv4JIaXJf9u01o=
+github.com/abcp-sdk/abc-protocol-go v1.0.7 h1:pWJhtJ+LRaQcp/dsN35smpSrQn/zWReSZ/9VI9sBOKU=
+github.com/abcp-sdk/abc-protocol-go v1.0.7/go.mod h1:Pj40eYsDYx1n8Gf2BiQU7Rf9IESUggv4JIaXJf9u01o=
+github.com/abcp-sdk/abc-protocol-go v1.0.8 h1:vKbiTcCQHiiUwCdJZFn+iHAy+4ppnPsXbrv4DgfWMnc=
+github.com/abcp-sdk/abc-protocol-go v1.0.8/go.mod h1:Pj40eYsDYx1n8Gf2BiQU7Rf9IESUggv4JIaXJf9u01o=
+github.com/abcp-sdk/abc-protocol-go v1.0.9 h1:Je8K78N9nWDkAly/7wi8fk/dQYmQnFtWCOH+SXV4b6Q=
+github.com/abcp-sdk/abc-protocol-go v1.0.9/go.mod h1:Pj40eYsDYx1n8Gf2BiQU7Rf9IESUggv4JIaXJf9u01o=
 github.com/creack/pty v1.1.9/go.mod h1:oKZEueFk5CKHvIhNR5MUki03XCEU+Q6VDXinZuGJ33E=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=

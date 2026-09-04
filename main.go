@@ -362,6 +362,12 @@ func (s *server) handlers() map[string]extension.ToolSpec {
 				if prompt == "" {
 					prompt = "Describe this image"
 				}
+				// The vision model is required: refuse to run when unset so a
+				// misconfigured deployment fails fast instead of silently 400ing.
+				model := s.vlmModel(sessionName)
+				if model == "" {
+					return extension.ToolResultData{}, fmt.Errorf("vlm_model not configured: set a vision model first")
+				}
 				meta, bytes, err := s.fileBytesFromAgent(ctx, code)
 				if err != nil {
 					return extension.ToolResultData{}, fmt.Errorf("file not found: %s", code)
@@ -380,7 +386,7 @@ func (s *server) handlers() map[string]extension.ToolSpec {
 					return extension.ToolResultData{}, fmt.Errorf("image_read failed: %w", err)
 				}
 				return extension.ToolResultData{Content: text, Data: map[string]interface{}{
-					"model": s.vlmModel(sessionName),
+					"model": model,
 					"code":  meta.Code, "mime": meta.Mime, "size": meta.Size,
 				}}, nil
 			},
