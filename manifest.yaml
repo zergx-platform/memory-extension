@@ -127,7 +127,7 @@ tools:
 
 config:
   - name: vlm_model
-    description: "Vision model ref (provider_id/model_id) used by image_read."
+    description: "Vision model ref (provider_id/model_id) used by image-read."
     type: string
     scope: global
     default: ""
