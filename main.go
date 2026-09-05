@@ -262,7 +262,7 @@ func (s *server) handlers() map[string]extension.ToolSpec {
 		"todowrite": {
 			Execute: func(ctx context.Context, args map[string]interface{}, callID string, sessionName string) (extension.ToolResultData, error) {
 				if sessionName == "" {
-					return extension.ToolResultData{}, fmt.Errorf("missing session context (session_name)")
+					return extension.ToolResultData{}, ef(ctx, s.ext, sessionName, "missing session context (session_name)", "缺少会话上下文（session_name）")
 				}
 				sid := sessionName
 				var todos []map[string]interface{}
@@ -275,7 +275,7 @@ func (s *server) handlers() map[string]extension.ToolSpec {
 				}
 				n, err := s.writeTodos(ctx, sid, todos)
 				if err != nil {
-					return extension.ToolResultData{}, fmt.Errorf("todowrite failed: %w", err)
+					return extension.ToolResultData{}, ef(ctx, s.ext, sessionName, "todowrite failed: %v", "todowrite 失败：%v", err)
 				}
 				// Notify live UI listeners over the session SSE stream so the
 				// chat page drops its 5s todos polling.
@@ -292,7 +292,7 @@ func (s *server) handlers() map[string]extension.ToolSpec {
 		"history-search": {
 			Execute: func(ctx context.Context, args map[string]interface{}, callID string, sessionName string) (extension.ToolResultData, error) {
 				if sessionName == "" {
-					return extension.ToolResultData{}, fmt.Errorf("missing session context (session_name)")
+					return extension.ToolResultData{}, ef(ctx, s.ext, sessionName, "missing session context (session_name)", "缺少会话上下文（session_name）")
 				}
 				p := searchParams{
 					session: sessionName,
@@ -303,7 +303,7 @@ func (s *server) handlers() map[string]extension.ToolSpec {
 				}
 				entries, err := s.searchHistory(ctx, p)
 				if err != nil {
-					return extension.ToolResultData{}, fmt.Errorf("history_search failed: %w", err)
+					return extension.ToolResultData{}, ef(ctx, s.ext, sessionName, "history_search failed: %v", "history_search 失败：%v", err)
 				}
 				b, _ := json.Marshal(entries)
 				loc := localeOf(ctx, s.ext, sessionName, envOr("ZERGX_LOCALE", "en"))
@@ -314,14 +314,14 @@ func (s *server) handlers() map[string]extension.ToolSpec {
 		"history-range": {
 			Execute: func(ctx context.Context, args map[string]interface{}, callID string, sessionName string) (extension.ToolResultData, error) {
 				if sessionName == "" {
-					return extension.ToolResultData{}, fmt.Errorf("missing session context (session_name)")
+					return extension.ToolResultData{}, ef(ctx, s.ext, sessionName, "missing session context (session_name)", "缺少会话上下文（session_name）")
 				}
 				from := int(abcprotocol.ArgInt(args, "from", 0))
 				to := int(abcprotocol.ArgInt(args, "to", 0))
 				limit := int(abcprotocol.ArgInt(args, "limit", 200))
 				entries, err := s.chainEntries(ctx, sessionName, from, to, limit)
 				if err != nil {
-					return extension.ToolResultData{}, fmt.Errorf("history_range failed: %w", err)
+					return extension.ToolResultData{}, ef(ctx, s.ext, sessionName, "history_range failed: %v", "history_range 失败：%v", err)
 				}
 				b, _ := json.Marshal(entries)
 				loc := localeOf(ctx, s.ext, sessionName, envOr("ZERGX_LOCALE", "en"))
@@ -333,11 +333,11 @@ func (s *server) handlers() map[string]extension.ToolSpec {
 			Execute: func(ctx context.Context, args map[string]interface{}, callID string, sessionName string) (extension.ToolResultData, error) {
 				code := abcprotocol.ArgString(args, "code")
 				if code == "" {
-					return extension.ToolResultData{}, fmt.Errorf("code is required")
+					return extension.ToolResultData{}, ef(ctx, s.ext, sessionName, "code is required", "缺少 code 参数")
 				}
 				meta, err := s.fileMetaFromAgent(ctx, code)
 				if err != nil {
-					return extension.ToolResultData{}, fmt.Errorf("file not found: %s", code)
+					return extension.ToolResultData{}, ef(ctx, s.ext, sessionName, "file not found: %s", "找不到文件：%s", code)
 				}
 				b, _ := json.Marshal(meta)
 				loc := localeOf(ctx, s.ext, sessionName, envOr("ZERGX_LOCALE", "en"))
@@ -356,34 +356,35 @@ func (s *server) handlers() map[string]extension.ToolSpec {
 			Execute: func(ctx context.Context, args map[string]interface{}, callID string, sessionName string) (extension.ToolResultData, error) {
 				code := abcprotocol.ArgString(args, "code")
 				if code == "" {
-					return extension.ToolResultData{}, fmt.Errorf("code is required")
+					return extension.ToolResultData{}, ef(ctx, s.ext, sessionName, "code is required", "缺少 code 参数")
 				}
 				prompt := abcprotocol.ArgString(args, "prompt")
 				if prompt == "" {
-					prompt = "Describe this image in detail."
+					loc := localeOf(ctx, s.ext, sessionName, envOr("ZERGX_LOCALE", "en"))
+					prompt = t(loc, "Describe this image in detail.", "请详细描述这张图像。")
 				}
 				// The vision model is required: refuse to run when unset so a
 				// misconfigured deployment fails fast instead of silently 400ing.
 				model := s.vlmModel(sessionName)
 				if model == "" {
-					return extension.ToolResultData{}, fmt.Errorf("vlm_model not configured: set a vision model first")
+					return extension.ToolResultData{}, ef(ctx, s.ext, sessionName, "vlm_model not configured: set a vision model first", "未配置 vlm_model：请先设置视觉模型")
 				}
 				meta, bytes, err := s.fileBytesFromAgent(ctx, code)
 				if err != nil {
-					return extension.ToolResultData{}, fmt.Errorf("file not found: %s", code)
+					return extension.ToolResultData{}, ef(ctx, s.ext, sessionName, "file not found: %s", "找不到文件：%s", code)
 				}
 				if !strings.HasPrefix(meta.Mime, "image/") {
-					return extension.ToolResultData{}, fmt.Errorf("file %s is not an image (%s)", meta.Code, meta.Mime)
+					return extension.ToolResultData{}, ef(ctx, s.ext, sessionName, "file %s is not an image (%s)", "文件 %s 不是图像（%s）", meta.Code, meta.Mime)
 				}
 				// Downscale before sending so oversized images stay within the
 				// VLM input budget (never ship the raw bytes).
 				b64, err := resizeToDataURL(bytes, meta.Mime, envInt("IMAGE_READ_MAX_DIM", 1024), envInt("IMAGE_READ_JPEG_QUALITY", 85))
 				if err != nil {
-					return extension.ToolResultData{}, fmt.Errorf("image resize failed: %w", err)
+					return extension.ToolResultData{}, ef(ctx, s.ext, sessionName, "image resize failed: %v", "图像缩放失败：%v", err)
 				}
 				text, err := s.vlmChat(ctx, prompt, b64)
 				if err != nil {
-					return extension.ToolResultData{}, fmt.Errorf("image_read failed: %w", err)
+					return extension.ToolResultData{}, ef(ctx, s.ext, sessionName, "image_read failed: %v", "image_read 失败：%v", err)
 				}
 				return extension.ToolResultData{Content: text, Data: map[string]interface{}{
 					"model": model,
