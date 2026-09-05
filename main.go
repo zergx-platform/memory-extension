@@ -360,7 +360,7 @@ func (s *server) handlers() map[string]extension.ToolSpec {
 				}
 				prompt := abcprotocol.ArgString(args, "prompt")
 				if prompt == "" {
-					prompt = "Describe this image"
+					prompt = "Describe this image in detail."
 				}
 				// The vision model is required: refuse to run when unset so a
 				// misconfigured deployment fails fast instead of silently 400ing.
@@ -402,11 +402,12 @@ func (s *server) handlers() map[string]extension.ToolSpec {
 // back to the env vars for backward compatibility.
 func (s *server) vlmChat(ctx context.Context, prompt, imageDataURL string) (string, error) {
 	agentURL := envOr("AGENT_BASE_URL", envOr("ZERGX_AGENT_URL", "http://agent.zergx.svc.cluster.local:80"))
+	// The vision model MUST come from config ('vlm_model'). No fallback: a
+	// text model silently drops the image part and produces hallucinated,
+	// non-reproducible descriptions. Fail fast so the operator fixes config.
 	model := s.vlmModel("")
 	if model == "" {
-		// Prefer the provider most likely to be vision-capable, else the
-		// default model ref. Overridable via env throughout.
-		model = envOr("IMAGE_READ_MODEL", envOr("ZERGX_LLM_MODEL", "deepseek-v4-pro"))
+		return "", fmt.Errorf("vlm_model not configured: set a vision model in tool config")
 	}
 	body := map[string]interface{}{
 		"model": model,
@@ -415,10 +416,17 @@ func (s *server) vlmChat(ctx context.Context, prompt, imageDataURL string) (stri
 				"role": "user",
 				"content": []map[string]interface{}{
 					{"type": "text", "text": prompt},
-					{"type": "image", "image": imageDataURL},
+					// OpenAI-compatible image format: `image_url` with a data URL.
+					// The legacy `{type:"image", image: dataURL}` is rejected by
+					// modern vision endpoints (e.g. qwen) — use the standard
+					// image_url envelope so the image is actually delivered.
+					{"type": "image_url", "image_url": map[string]interface{}{"url": imageDataURL}},
 				},
 			},
 		},
+		// Deterministic output: the earlier non-reproducible descriptions came
+		// from default sampling. Pin temperature to 0 for stable image reads.
+		"temperature": 0,
 	}
 	payload, _ := json.Marshal(body)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(agentURL, "/")+"/api/v1/llm/chat/completions", bytes.NewReader(payload))

@@ -1,133 +1,154 @@
-# memory-extension protocol manifest — single declarative source for the
-# extension's wire protocol (tools). Handlers are bound by name in code.
 id: memory
 version: 0.1.0
 tools:
-  - name: todowrite
-    description: Replace the session's todo list (stored in the database, not a file).
-    descriptions:
-      zh: 替换会话的待办列表（存于数据库，而非文件）。
-    input_schema:
-      type: object
-      properties:
-        todos:
-          type: array
-          description: The full todo list to replace the session's current one.
-          descriptions:
-            zh: 替换会话当前列表的完整待办列表。
-          items:
-            type: object
-            properties:
-              content:
-                type: string
-                description: Todo item text.
-                descriptions:
-                  zh: 待办项文本。
-              status:
-                type: string
-                enum: [pending, in_progress, completed, cancelled]
-                description: Todo status.
-                descriptions:
-                  zh: 待办状态。
-              priority:
-                type: string
-                enum: [high, medium, low]
-                description: Todo priority.
-                descriptions:
-                  zh: 待办优先级。
-            required: [content, status, priority]
-      required: [todos]
-  - name: history-search
-    description: Search this session's chat history by keyword (case-insensitive substring over parts(type=text) text, tool names and change ids), optionally constrained to a time range [from, to] (YYYY-MM-DD HH:MM:SS). Returns messages newest-first with their role, depth (0 = newest), tool name and workspace change id.
-    descriptions:
-      zh: 按关键词搜索本会话的聊天历史（对 parts(type=text) 文本、工具名、change id 做大小写不敏感的子串匹配），可选时间范围 [from, to]（YYYY-MM-DD HH:MM:SS）。按最新在前返回消息及其角色、深度（0=最新）、工具名与工作区 change id。
-    input_schema:
-      type: object
-      properties:
-        query:
-          type: string
-          description: Case-insensitive keyword matched against message text, tool names and change ids.
-          descriptions:
-            zh: 不区分大小写的关键词，匹配消息文本、工具名与 change id。
-        from:
-          type: string
-          description: Inclusive lower time bound (YYYY-MM-DD HH:MM:SS).
-          descriptions:
-            zh: 含端点的下界时间（YYYY-MM-DD HH:MM:SS）。
-        to:
-          type: string
-          description: Inclusive upper time bound (YYYY-MM-DD HH:MM:SS).
-          descriptions:
-            zh: 含端点的上界时间（YYYY-MM-DD HH:MM:SS）。
-        limit:
-          type: integer
-          description: Maximum number of messages to return (default 50).
-          descriptions:
-            zh: 最多返回的消息数（默认 50）。
-      required: [query]
-  - name: history-range
-    description: Read this session's chat history by position (depth) window. depth 0 = the newest message; positive numbers go back in time; negative numbers count from the newest side (-1 = newest). Returns [depth_from, depth_to) oldest-first with role, content, tool name and change id.
-    descriptions:
-      zh: 按位置（深度）窗口读取本会话的聊天历史。depth 0 = 最新消息；正数向更早回溯；负数从最新一侧计数（-1 = 最新）。返回 [depth_from, depth_to)，最旧在前，含角色、内容、工具名与 change id。
-    input_schema:
-      type: object
-      properties:
-        from:
-          type: integer
-          description: Starting depth offset (0 = newest message).
-          descriptions:
-            zh: 起始深度偏移（0 = 最新一条消息）。
-        to:
-          type: integer
-          description: Exclusive depth bound.
-          descriptions:
-            zh: 不含端点的深度上界。
-        limit:
-          type: integer
-          description: Maximum number of messages to return (default 50).
-          descriptions:
-            zh: 最多返回的消息数（默认 50）。
-  # ---- file storage (uploaded attachments) ----
-  # An attachment is referenced in chat as `file:<code>` (its 16-char hex
-  # object key). The model resolves it through these tools; it never sees the
-  # bytes directly.
-  - name: file-info
-    description: Return metadata (name, mime type, size, sha256) for a previously uploaded file referenced as file:<code>. Use this first to learn a file's type and size before deciding to read or analyze it.
-    descriptions:
-      zh: 返回以 file:<code> 引用的已上传文件元数据（名称、mime、大小、sha256）。先调用它以了解文件类型与大小，再决定读取或分析。
-    input_schema:
-      type: object
-      properties:
-        code:
-          type: string
-          description: The file code (the 16-char segment after file:)
-          descriptions:
-            zh: "文件编码（file: 之后的 16 字符部分）。"
-      required: [code]
-  - name: image-read
-    description: Understand a previously uploaded image referenced as file:<code> using a vision model. Pass a question (prompt); the model returns a natural-language description/answer about the image. The image is downscaled before sending.
-    descriptions:
-      zh: 使用视觉模型理解以 file:<code> 引用的已上传图片。传入问题（prompt）；模型返回对图片的自然语言描述/回答。发送前会先缩小图片。
-    input_schema:
-      type: object
-      properties:
-        code:
-          type: string
-          description: The file code (the 16-char segment after file:)
-          descriptions:
-            zh: "文件编码（file: 之后的 16 字符部分）。"
-        prompt:
-          type: string
-          description: "Question about the image (default: describe it)"
-          default: "Describe this image"
-          descriptions:
-            zh: 关于图像的问题（默认：描述该图像）。
-      required: [code]
-    required_config: [vlm_model]
-
+- name: todowrite
+  description: Replace the session's todo list (stored in the database, not a file).
+  descriptions:
+    zh: 替换会话的待办列表（存于数据库，而非文件）。
+  input_schema:
+    type: object
+    properties:
+      todos:
+        type: array
+        description: The full todo list to replace the session's current one.
+        descriptions:
+          zh: 替换会话当前列表的完整待办列表。
+        items:
+          type: object
+          properties:
+            content:
+              type: string
+              description: Todo item text.
+              descriptions:
+                zh: 待办项文本。
+            status:
+              type: string
+              enum:
+              - pending
+              - in_progress
+              - completed
+              - cancelled
+              description: Todo status.
+              descriptions:
+                zh: 待办状态。
+            priority:
+              type: string
+              enum:
+              - high
+              - medium
+              - low
+              description: Todo priority.
+              descriptions:
+                zh: 待办优先级。
+          required:
+          - content
+          - status
+          - priority
+    required:
+    - todos
+- name: history-search
+  description: Search this session's chat history by keyword (case-insensitive substring
+    over parts(type=text) text, tool names and change ids), optionally constrained
+    to a time range [from, to] (YYYY-MM-DD HH:MM:SS). Returns messages newest-first
+    with their role, depth (0 = newest), tool name and workspace change id.
+  descriptions:
+    zh: 按关键词搜索本会话的聊天历史（对 parts(type=text) 文本、工具名、change id 做大小写不敏感的子串匹配），可选时间范围 [from,
+      to]（YYYY-MM-DD HH:MM:SS）。按最新在前返回消息及其角色、深度（0=最新）、工具名与工作区 change id。
+  input_schema:
+    type: object
+    properties:
+      query:
+        type: string
+        description: Case-insensitive keyword matched against message text, tool names
+          and change ids.
+        descriptions:
+          zh: 不区分大小写的关键词，匹配消息文本、工具名与 change id。
+      from:
+        type: string
+        description: Inclusive lower time bound (YYYY-MM-DD HH:MM:SS).
+        descriptions:
+          zh: 含端点的下界时间（YYYY-MM-DD HH:MM:SS）。
+      to:
+        type: string
+        description: Inclusive upper time bound (YYYY-MM-DD HH:MM:SS).
+        descriptions:
+          zh: 含端点的上界时间（YYYY-MM-DD HH:MM:SS）。
+      limit:
+        type: integer
+        description: Maximum number of messages to return (default 50).
+        descriptions:
+          zh: 最多返回的消息数（默认 50）。
+    required:
+    - query
+- name: history-range
+  description: Read this session's chat history by position (depth) window. depth
+    0 = the newest message; positive numbers go back in time; negative numbers count
+    from the newest side (-1 = newest). Returns [depth_from, depth_to) oldest-first
+    with role, content, tool name and change id.
+  descriptions:
+    zh: 按位置（深度）窗口读取本会话的聊天历史。depth 0 = 最新消息；正数向更早回溯；负数从最新一侧计数（-1 = 最新）。返回 [depth_from,
+      depth_to)，最旧在前，含角色、内容、工具名与 change id。
+  input_schema:
+    type: object
+    properties:
+      from:
+        type: integer
+        description: Starting depth offset (0 = newest message).
+        descriptions:
+          zh: 起始深度偏移（0 = 最新一条消息）。
+      to:
+        type: integer
+        description: Exclusive depth bound.
+        descriptions:
+          zh: 不含端点的深度上界。
+      limit:
+        type: integer
+        description: Maximum number of messages to return (default 50).
+        descriptions:
+          zh: 最多返回的消息数（默认 50）。
+- name: file-info
+  description: Return metadata (name, mime type, size, sha256) for a previously uploaded
+    file referenced as file:<code>. Use this first to learn a file's type and size
+    before deciding to read or analyze it.
+  descriptions:
+    zh: 返回以 file:<code> 引用的已上传文件元数据（名称、mime、大小、sha256）。先调用它以了解文件类型与大小，再决定读取或分析。
+  input_schema:
+    type: object
+    properties:
+      code:
+        type: string
+        description: The file code (the 16-char segment after file:)
+        descriptions:
+          zh: '文件编码（file: 之后的 16 字符部分）。'
+    required:
+    - code
+- name: image-read
+  description: Understand a previously uploaded image referenced as file:<code> using
+    a vision model. Pass a question (prompt); the model returns a natural-language
+    description/answer about the image. The image is downscaled before sending.
+  descriptions:
+    zh: 使用视觉模型理解以 file:<code> 引用的已上传图片。传入问题（prompt）；模型返回对图片的自然语言描述/回答。发送前会先缩小图片。
+  input_schema:
+    type: object
+    properties:
+      code:
+        type: string
+        description: The file code (the 16-char segment after file:)
+        descriptions:
+          zh: '文件编码（file: 之后的 16 字符部分）。'
+      prompt:
+        type: string
+        description: 'Question about the image (default: describe it in detail).'
+        default: Describe this image in detail.
+        descriptions:
+          zh: 关于图像的问题（默认：详细描述该图像）。
+    required:
+    - code
+  required_config:
+  - vlm_model
 config:
-  - name: vlm_model
-    description: "Vision model ref (provider_id/model_id) used by image-read."
-    type: string
-    scope: global
-    default: ""
+- name: vlm_model
+  description: Vision model ref (provider_id/model_id) used by image-read.
+  type: string
+  scope: global
+  default: ''
