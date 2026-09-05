@@ -88,9 +88,9 @@ tools:
           descriptions:
             zh: 最多返回的消息数（默认 50）。
   # ---- file storage (uploaded attachments) ----
-  # An attachment is referenced in chat as `file:<code>` (its 8-char, content
-  # sha256-based object key). The model resolves it through these tools; it
-  # never sees the bytes directly.
+  # An attachment is referenced in chat as `file:<code>` (its 16-char hex
+  # object key). The model resolves it through these tools; it never sees the
+  # bytes directly.
   - name: file-info
     description: Return metadata (name, mime type, size, sha256) for a previously uploaded file referenced as file:<code>. Use this first to learn a file's type and size before deciding to read or analyze it.
     descriptions:
@@ -100,9 +100,9 @@ tools:
       properties:
         code:
           type: string
-          description: The file code (the 8-char segment after file:)
+          description: The file code (the 16-char segment after file:)
           descriptions:
-            zh: "文件编码（file: 之后的 8 字符部分）。"
+            zh: "文件编码（file: 之后的 16 字符部分）。"
       required: [code]
   - name: image-read
     description: Understand a previously uploaded image referenced as file:<code> using a vision model. Pass a question (prompt); the model returns a natural-language description/answer about the image. The image is downscaled before sending.
@@ -113,9 +113,9 @@ tools:
       properties:
         code:
           type: string
-          description: The file code (the 8-char segment after file:)
+          description: The file code (the 16-char segment after file:)
           descriptions:
-            zh: "文件编码（file: 之后的 8 字符部分）。"
+            zh: "文件编码（file: 之后的 16 字符部分）。"
         prompt:
           type: string
           description: "Question about the image (default: describe it)"
